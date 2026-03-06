@@ -1,0 +1,661 @@
+// src/routes/AdminRoutes.tsx
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { Suspense, lazy } from 'react';
+import AdminLayout from '@/components/admin/AdminLayout';
+import { useAdminAuth } from '@/contexts/admin/AdminAuthContext';
+import AdminLogin from '@/pages/admin/AdminLogin';
+// import AdminRegister from '@/pages/admin/AdminRegister';
+// import ForgotPassword from '@/pages/admin/ForgotPassword';
+// import ResetPassword from '@/pages/admin/ResetPassword';
+// import VerifyEmail from '@/pages/admin/VerifyEmail';
+//import LoadingSpinner from '@/components/ui/loading-spinner';
+import Unauthorized from '@/pages/admin/Unauthorized';
+import ProtectedRoute from '@/components/admin/ProtectedRoute';
+import { Settings } from 'lucide-react';
+import LoadingSpinner from '@/components/ui/loading-spinner';
+
+// Lazy load only the components that exist
+const Dashboard = lazy(() => import('@/pages/admin/Dashboard'));
+const ProductList = lazy(() => import('@/pages/admin/Products/ProductList'));
+const ProductForm = lazy(() => import('@/pages/admin/Products/ProductForm'));
+// const ProductDetails = lazy(() => import('@/pages/admin/Products/ProductDetails'));
+const OrderList = lazy(() => import('@/pages/admin/Orders/OrderList'));
+const OrderDetails = lazy(() => import('@/pages/admin/Orders/OrderDetails'));
+const CustomerList = lazy(() => import('@/pages/admin/Customers/CustomerList'));
+// const CustomerDetails = lazy(() => import('@/pages/admin/Customers/CustomerDetails'));
+// const InventoryList = lazy(() => import('@/pages/admin/Inventory/InventoryList'));
+// const InventoryMovements = lazy(() => import('@/pages/admin/Inventory/InventoryMovements'));
+// const DiscountList = lazy(() => import('@/pages/admin/Discounts/DiscountList'));
+// const DiscountForm = lazy(() => import('@/pages/admin/Discounts/DiscountForm'));
+// const CategoryList = lazy(() => import('@/pages/admin/Categories/CategoryList'));
+// const CategoryForm = lazy(() => import('@/pages/admin/Categories/CategoryForm'));
+// const BrandList = lazy(() => import('@/pages/admin/Brands/BrandList'));
+// const BrandForm = lazy(() => import('@/pages/admin/Brands/BrandForm'));
+// const PartnerList = lazy(() => import('@/pages/admin/Partners/PartnerList'));
+// const PartnerForm = lazy(() => import('@/pages/admin/Partners/PartnerForm'));
+// const SubscriberList = lazy(() => import('@/pages/admin/Subscribers/SubscriberList'));
+// const Analytics = lazy(() => import('@/pages/admin/Analytics'));
+// const Reports = lazy(() => import('@/pages/admin/Reports'));
+// const ReportGenerator = lazy(() => import('@/pages/admin/Reports/ReportGenerator'));
+//const Settings = lazy(() => import('@/pages/admin/Settings'));
+// const Profile = lazy(() => import('@/pages/admin/Profile'));
+// const AuditLogs = lazy(() => import('@/pages/admin/AuditLogs'));
+// const BackupRestore = lazy(() => import('@/pages/admin/BackupRestore'));
+// const SystemHealth = lazy(() => import('@/pages/admin/SystemHealth'));
+// const SupportTickets = lazy(() => import('@/pages/admin/Support/SupportTickets'));
+// const TicketDetails = lazy(() => import('@/pages/admin/Support/TicketDetails'));
+// const Notifications = lazy(() => import('@/pages/admin/Notifications'));
+// const Announcements = lazy(() => import('@/pages/admin/Announcements'));
+// const ShippingZones = lazy(() => import('@/pages/admin/Shipping/ShippingZones'));
+// const PaymentGateways = lazy(() => import('@/pages/admin/PaymentGateways'));
+// const TaxSettings = lazy(() => import('@/pages/admin/TaxSettings'));
+// const EmailTemplates = lazy(() => import('@/pages/admin/EmailTemplates'));
+// const SMSSettings = lazy(() => import('@/pages/admin/SMSSettings'));
+// const StaffManagement = lazy(() => import('@/pages/admin/Staff/StaffManagement'));
+// const RolePermissions = lazy(() => import('@/pages/admin/RolePermissions'));
+// const ActivityLogs = lazy(() => import('@/pages/admin/ActivityLogs'));
+// const ImportExport = lazy(() => import('@/pages/admin/ImportExport'));
+// const BulkOperations = lazy(() => import('@/pages/admin/BulkOperations'));
+// const Reviews = lazy(() => import('@/pages/admin/Reviews'));
+// const Questions = lazy(() => import('@/pages/admin/Questions'));
+// const Returns = lazy(() => import('@/pages/admin/Returns'));
+// const Refunds = lazy(() => import('@/pages/admin/Refunds'));
+// const PromoCodes = lazy(() => import('@/pages/admin/PromoCodes'));
+// const GiftCards = lazy(() => import('@/pages/admin/GiftCards'));
+// const LoyaltyProgram = lazy(() => import('@/pages/admin/LoyaltyProgram'));
+// const AbandonedCarts = lazy(() => import('@/pages/admin/AbandonedCarts'));
+// const Wishlists = lazy(() => import('@/pages/admin/Wishlists'));
+// const Marketing = lazy(() => import('@/pages/admin/Marketing'));
+// const Campaigns = lazy(() => import('@/pages/admin/Campaigns'));
+// const NewsletterCampaigns = lazy(() => import('@/pages/admin/NewsletterCampaigns'));
+// const SMSCampaigns = lazy(() => import('@/pages/admin/SMSCampaigns'));
+// const PushNotifications = lazy(() => import('@/pages/admin/PushNotifications'));
+// const SEO = lazy(() => import('@/pages/admin/SEO'));
+// const Sitemap = lazy(() => import('@/pages/admin/Sitemap'));
+// const RobotsTxt = lazy(() => import('@/pages/admin/RobotsTxt'));
+// const Webhooks = lazy(() => import('@/pages/admin/Webhooks'));
+// const APIKeys = lazy(() => import('@/pages/admin/APIKeys'));
+// const Integrations = lazy(() => import('@/pages/admin/Integrations'));
+// const Maintenance = lazy(() => import('@/pages/admin/Maintenance'));
+// const Logs = lazy(() => import('@/pages/admin/Logs'));
+
+const LoadingFallback = () => (
+  <div className="min-h-[400px] flex items-center justify-center">
+    <LoadingSpinner size="lg" />
+  </div>
+);
+
+const AdminRoutes = () => {
+  useAdminAuth();
+
+  return (
+    <Routes>
+      {/* Public admin routes - accessible without authentication */}
+      <Route path="login" element={<AdminLogin />} />
+      <Route path="register" element={<AdminRegister />} /> 
+      {/* <Route path="forgot-password" element={<ForgotPassword />} /> */}
+      {/* <Route path="reset-password" element={<ResetPassword />} /> */}
+      {/* <Route path="verify-email" element={<VerifyEmail />} /> */}
+      
+      {/* Protected admin routes - require authentication */}
+      <Route path="/" element={
+        <ProtectedRoute>
+          <AdminLayout />
+        </ProtectedRoute>
+      }>
+        {/* Redirect root to dashboard */}
+        <Route index element={<Navigate to="dashboard" replace />} />
+        
+        {/* Dashboard */}
+        <Route path="dashboard" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <Dashboard />
+          </Suspense>
+        } />
+        
+        {/* Profile & Account */}
+        {/* <Route path="profile" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <Profile />
+          </Suspense>
+        /> */}
+        
+        {/* Products Management */}
+        <Route path="products">
+          <Route index element={
+            <Suspense fallback={<LoadingFallback />}>
+              <ProductList />
+            </Suspense>
+          } />
+          <Route path="new" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <ProductForm />
+            </Suspense>
+          } />
+          <Route path=":id" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <ProductForm />
+            </Suspense>
+          } />
+          <Route path=":id/edit" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <ProductForm />
+            </Suspense>
+          } />
+          {/* <Route path="import" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <ImportExport type="products" />
+            </Suspense>
+          } />
+          <Route path="export" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <ImportExport type="products" mode="export" />
+            </Suspense>
+          } />
+          <Route path="bulk-operations" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <BulkOperations type="products" />
+            </Suspense>
+          } /> */}
+        </Route>
+        
+        {/* Categories Management */}
+        {/* <Route path="categories">
+          <Route index element={
+            <Suspense fallback={<LoadingFallback />}>
+              <CategoryList />
+            </Suspense>
+          } />
+          <Route path="new" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <CategoryForm />
+            </Suspense>
+          } />
+          <Route path=":id/edit" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <CategoryForm />
+            </Suspense>
+          } />
+        </Route> */}
+        
+        {/* Brands Management */}
+        {/* <Route path="brands">
+          <Route index element={
+            <Suspense fallback={<LoadingFallback />}>
+              <BrandList />
+            </Suspense>
+          } />
+          <Route path="new" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <BrandForm />
+            </Suspense>
+          } />
+          <Route path=":id/edit" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <BrandForm />
+            </Suspense>
+          } />
+        </Route> */}
+        
+        {/* Orders Management */}
+        <Route path="orders">
+          <Route index element={
+            <Suspense fallback={<LoadingFallback />}>
+              <OrderList />
+            </Suspense>
+          } />
+          <Route path=":id" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <OrderDetails />
+            </Suspense>
+          } />
+          {/* <Route path="returns" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Returns />
+            </Suspense>
+          } />
+          <Route path="refunds" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Refunds />
+            </Suspense>
+          } />
+          <Route path="abandoned" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <AbandonedCarts />
+            </Suspense>
+          } /> */}
+        </Route>
+        
+        {/* Customers Management */}
+        <Route path="customers">
+          <Route index element={
+            <Suspense fallback={<LoadingFallback />}>
+              <CustomerList />
+            </Suspense>
+          } />
+          {/* <Route path=":id" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <CustomerDetails />
+            </Suspense>
+          } />
+          <Route path="groups" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <CustomerGroups />
+            </Suspense>
+          } /> */}
+        </Route>
+        
+        {/* Inventory Management */}
+        {/* <Route path="inventory">
+          <Route index element={
+            <Suspense fallback={<LoadingFallback />}>
+              <InventoryList />
+            </Suspense>
+          } />
+          <Route path="movements" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <InventoryMovements />
+            </Suspense>
+          } />
+          <Route path="low-stock" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <InventoryList filter="low-stock" />
+            </Suspense>
+          } />
+          <Route path="out-of-stock" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <InventoryList filter="out-of-stock" />
+            </Suspense>
+          } />
+        </Route> */}
+        
+        {/* Discounts & Promotions */}
+        {/* <Route path="discounts">
+          <Route index element={
+            <Suspense fallback={<LoadingFallback />}>
+              <DiscountList />
+            </Suspense>
+          } />
+          <Route path="new" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <DiscountForm />
+            </Suspense>
+          } />
+          <Route path=":id/edit" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <DiscountForm />
+            </Suspense>
+          } />
+        </Route> */}
+        
+        {/* Promo Codes */}
+        {/* <Route path="promo-codes">
+          <Route index element={
+            <Suspense fallback={<LoadingFallback />}>
+              <PromoCodes />
+            </Suspense>
+          } />
+          <Route path="new" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <PromoCodes mode="create" />
+            </Suspense>
+          } />
+        </Route> */}
+        
+        {/* Gift Cards */}
+        {/* <Route path="gift-cards">
+          <Route index element={
+            <Suspense fallback={<LoadingFallback />}>
+              <GiftCards />
+            </Suspense>
+          } />
+          <Route path="new" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <GiftCards mode="create" />
+            </Suspense>
+          } />
+        </Route> */}
+        
+        {/* Loyalty Program */}
+        {/* <Route path="loyalty" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <LoyaltyProgram />
+          </Suspense>
+        } /> */}
+        
+        {/* Partners Management */}
+        {/* <Route path="partners">
+          <Route index element={
+            <Suspense fallback={<LoadingFallback />}>
+              <PartnerList />
+            </Suspense>
+          } />
+          <Route path="new" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <PartnerForm />
+            </Suspense>
+          } />
+          <Route path=":id/edit" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <PartnerForm />
+            </Suspense>
+          } />
+        </Route> */}
+        
+        {/* Subscribers */}
+        {/* <Route path="subscribers">
+          <Route index element={
+            <Suspense fallback={<LoadingFallback />}>
+              <SubscriberList />
+            </Suspense>
+          } />
+          <Route path="newsletter" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <NewsletterCampaigns />
+            </Suspense>
+          } />
+        </Route> */}
+        
+        {/* Reviews & Ratings */}
+        {/* <Route path="reviews">
+          <Route index element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Reviews />
+            </Suspense>
+          } />
+          <Route path="pending" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Reviews filter="pending" />
+            </Suspense>
+          } />
+        </Route> */}
+        
+        {/* Customer Questions */}
+        {/* <Route path="questions">
+          <Route index element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Questions />
+            </Suspense>
+          } />
+          <Route path=":id" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Questions details />
+            </Suspense>
+          } />
+        </Route> */}
+        
+        {/* Wishlists */}
+        {/* <Route path="wishlists" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <Wishlists />
+          </Suspense>
+        } /> */}
+        
+        {/* Analytics & Reports */}
+        {/* <Route path="analytics" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <Analytics />
+          </Suspense>
+        } />
+        
+        <Route path="reports">
+          <Route index element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Reports />
+            </Suspense>
+          } />
+          <Route path="generate" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <ReportGenerator />
+            </Suspense>
+          } />
+          <Route path="sales" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Reports type="sales" />
+            </Suspense>
+          } />
+          <Route path="inventory" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Reports type="inventory" />
+            </Suspense>
+          } />
+          <Route path="customers" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Reports type="customers" />
+            </Suspense>
+          } />
+        </Route> */}
+        
+        {/* Marketing */}
+        {/* <Route path="marketing">
+          <Route index element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Marketing />
+            </Suspense>
+          } />
+          <Route path="campaigns" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Campaigns />
+            </Suspense>
+          } />
+          <Route path="campaigns/new" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Campaigns mode="create" />
+            </Suspense>
+          } />
+          <Route path="email" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <NewsletterCampaigns />
+            </Suspense>
+          } />
+          <Route path="sms" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <SMSCampaigns />
+            </Suspense>
+          } />
+          <Route path="push" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <PushNotifications />
+            </Suspense>
+          } />
+        </Route> */}
+        
+        {/* Support */}
+        {/* <Route path="support">
+          <Route index element={
+            <Suspense fallback={<LoadingFallback />}>
+              <SupportTickets />
+            </Suspense>
+          } />
+          <Route path="tickets/:id" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <TicketDetails />
+            </Suspense>
+          } />
+        </Route> */}
+        
+        {/* Notifications */}
+        {/* <Route path="notifications" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <Notifications />
+          </Suspense>
+        } />
+        
+        <Route path="announcements" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <Announcements />
+          </Suspense>
+        /> */}
+        
+        {/* Settings & Configuration */}
+        <Route path="settings" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <Settings />
+          </Suspense>
+        } />
+        
+        {/* Shipping Settings */}
+        {/* <Route path="shipping">
+          <Route index element={
+            <Suspense fallback={<LoadingFallback />}>
+              <ShippingZones />
+            </Suspense>
+          } />
+          <Route path="zones" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <ShippingZones />
+            </Suspense>
+          } />
+          <Route path="rates" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <ShippingRates />
+            </Suspense>
+          } />
+        </Route> */}
+        
+        {/* Payment Gateways */}
+        {/* <Route path="payments" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <PaymentGateways />
+          </Suspense>
+        /> */}
+        
+        {/* Tax Settings */}
+        {/* <Route path="tax" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <TaxSettings />
+          </Suspense>
+        /> */}
+        
+        {/* Email Templates */}
+        {/* <Route path="email-templates">
+          <Route index element={
+            <Suspense fallback={<LoadingFallback />}>
+              <EmailTemplates />
+            </Suspense>
+          } />
+          <Route path=":id/edit" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <EmailTemplates mode="edit" />
+            </Suspense>
+          } />
+        </Route> */}
+        
+        {/* SMS Settings */}
+        {/* <Route path="sms" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <SMSSettings />
+          </Suspense>
+        } /> */}
+        
+        {/* Staff Management */}
+        {/* <Route path="staff">
+          <Route index element={
+            <Suspense fallback={<LoadingFallback />}>
+              <StaffManagement />
+            </Suspense>
+          } />
+          <Route path="roles" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <RolePermissions />
+            </Suspense>
+          } />
+          <Route path="permissions" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <RolePermissions mode="permissions" />
+            </Suspense>
+          } />
+          <Route path="activity" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <ActivityLogs />
+            </Suspense>
+          } />
+        </Route> */}
+        
+        {/* Audit Logs */}
+        {/* <Route path="audit-logs" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <AuditLogs />
+          </Suspense>
+        } /> */}
+        
+        {/* Backup & Restore */}
+        {/* <Route path="backup" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <BackupRestore />
+          </Suspense>
+        } /> */}
+        
+        {/* System Health */}
+        {/* <Route path="system-health" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <SystemHealth />
+          </Suspense>
+        } /> */}
+        
+        {/* SEO Tools */}
+        {/* <Route path="seo">
+          <Route index element={
+            <Suspense fallback={<LoadingFallback />}>
+              <SEO />
+            </Suspense>
+          } />
+          <Route path="sitemap" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Sitemap />
+            </Suspense>
+          } />
+          <Route path="robots" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <RobotsTxt />
+            </Suspense>
+          } />
+        </Route> */}
+        
+        {/* API & Integrations */}
+        {/* <Route path="api">
+          <Route path="keys" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <APIKeys />
+            </Suspense>
+          } />
+          <Route path="webhooks" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Webhooks />
+            </Suspense>
+          } />
+          <Route path="integrations" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Integrations />
+            </Suspense>
+          } />
+        </Route> */}
+        
+        {/* Maintenance */}
+        {/* <Route path="maintenance" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <Maintenance />
+          </Suspense>
+        /> */}
+        
+        {/* System Logs */}
+        {/* <Route path="logs" element={
+          <Suspense fallback={<LoadingFallback />}>
+            <Logs />
+          </Suspense>
+        /> */}
+        
+        {/* Catch-all route for 404 */}
+        <Route path="*" element={<Navigate to="/admin/dashboard" replace />} />
+      </Route>
+      
+      {/* Unauthorized access */}
+      <Route path="unauthorized" element={<Unauthorized />} />
+      
+      {/* Redirect any unmatched admin routes to login */}
+      <Route path="*" element={<Navigate to="/admin/login" replace />} />
+    </Routes>
+  );
+};
+
+export default AdminRoutes;
