@@ -5,7 +5,16 @@ class ProductService {
   private readonly baseUrl = '/admin/products';
   private readonly publicBaseUrl = '/products';
 
-  // Helper to ensure image URLs are properly formatted
+  // Helper to get base URL for images - FIXED: Extract base URL without /api
+  private getBaseUrl(): string {
+    if (process.env.NODE_ENV === 'development') {
+      return 'http://localhost:5001';
+    }
+    // In production, derive from API base URL
+    return '';
+  }
+
+  // Helper to ensure image URLs are properly formatted - FIXED: Added /products/ subfolder
   private formatImageUrl(url: string): string {
     if (!url) return '/placeholder.svg';
     
@@ -19,32 +28,33 @@ class ProductService {
       return url;
     }
     
-    // If it's a relative path starting with /uploads, ensure it has the full URL
-    if (url.startsWith('/uploads')) {
-      // In development, add localhost base
-      if (process.env.NODE_ENV === 'development') {
-        return `http://localhost:5001${url}`;
-      }
+    // Extract just the filename if it's a full path
+    let filename = url;
+    if (url.includes('/')) {
+      filename = url.split('/').pop() || url;
+    }
+    
+    // FIXED: Always use /uploads/products/ subfolder
+    const baseUrl = this.getBaseUrl();
+    return `${baseUrl}/uploads/products/${filename}`;
+  }
+
+  // Helper to extract filename from URL
+  private extractFilename(url: string): string {
+    if (!url) return '';
+    
+    // If it's a full URL, extract the filename
+    if (url.includes('/uploads/')) {
+      const parts = url.split('/');
+      return parts[parts.length - 1];
+    }
+    
+    // If it's already just a filename
+    if (!url.includes('/')) {
       return url;
     }
     
-    // If it's just a filename, add the uploads path and base URL
-    if (!url.startsWith('/')) {
-      const path = `/uploads/products/${url}`;
-      if (process.env.NODE_ENV === 'development') {
-        return `http://localhost:5001${path}`;
-      }
-      return path;
-    }
-    
     return url;
-  }
-
-  // Helper to get base URL for images
-  private getBaseUrl(): string {
-    return process.env.NODE_ENV === 'development' 
-      ? 'http://localhost:5001' 
-      : '';
   }
 
   // Helper to process product images
@@ -195,22 +205,14 @@ class ProductService {
               if (img.startsWith('blob:')) {
                 return null;
               }
-              // If it's a full URL from our server, extract just the path
-              if (img.includes('/uploads/')) {
-                const match = img.match(/\/uploads\/[^?]+/);
-                return match ? match[0] : img;
-              }
-              return img;
+              // Extract just the filename
+              return this.extractFilename(img);
             } else if (img && img.url) {
               // If it's an object with url property
               if (img.url.startsWith('blob:')) {
                 return null;
               }
-              if (img.url.includes('/uploads/')) {
-                const match = img.url.match(/\/uploads\/[^?]+/);
-                return match ? match[0] : img.url;
-              }
-              return img.url;
+              return this.extractFilename(img.url);
             }
             return null;
           })
@@ -242,22 +244,14 @@ class ProductService {
               if (img.startsWith('blob:')) {
                 return null;
               }
-              // If it's a full URL from our server, extract just the path
-              if (img.includes('/uploads/')) {
-                const match = img.match(/\/uploads\/[^?]+/);
-                return match ? match[0] : img;
-              }
-              return img;
+              // Extract just the filename
+              return this.extractFilename(img);
             } else if (img && img.url) {
               // If it's an object with url property
               if (img.url.startsWith('blob:')) {
                 return null;
               }
-              if (img.url.includes('/uploads/')) {
-                const match = img.url.match(/\/uploads\/[^?]+/);
-                return match ? match[0] : img.url;
-              }
-              return img.url;
+              return this.extractFilename(img.url);
             }
             return null;
           })
@@ -317,25 +311,15 @@ class ProductService {
       
       console.log('Upload response:', response.data);
       
-      // The backend returns full URLs
+      // The backend returns URLs - extract just the filenames
       const urls = response.data.urls || [];
       
-      // In development, ensure URLs are properly formatted
-      if (process.env.NODE_ENV === 'development') {
-        return urls.map((url: string) => {
-          // If it's a relative path, make it absolute for preview
-          if (url.startsWith('/uploads')) {
-            return `http://localhost:5001${url}`;
-          }
-          return url;
-        });
-      }
-      
-      return urls;
+      // Return just the filenames
+      return urls.map((url: string) => this.extractFilename(url));
     } catch (error) {
       console.error('Error uploading images:', error);
-      // Return blob URLs as fallback for development
-      return files.map(file => URL.createObjectURL(file));
+      // Return empty array on error
+      return [];
     }
   }
 

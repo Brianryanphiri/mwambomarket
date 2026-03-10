@@ -1,24 +1,31 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { useToast } from '@/hooks/use-toast';
 
 export interface CartItem {
-  id: string;
+  productId: string;
   name: string;
   price: number;
   quantity: number;
   image?: string;
   unit?: string;
+  maxOrder?: number;
+  stock?: number;
 }
 
 interface CartContextType {
   items: CartItem[];
-  addItem: (item: Omit<CartItem, 'quantity'>) => void;
-  removeItem: (id: string) => void;
-  updateQuantity: (id: string, quantity: number) => void;
+  addItem: (item: Omit<CartItem, 'quantity'> & { quantity?: number }) => void;
+  removeItem: (productId: string) => void;
+  updateQuantity: (productId: string, quantity: number) => void;
   clearCart: () => void;
   totalItems: number;
-  totalPrice: number;
+  subtotal: number;
+  deliveryFee: number;
+  grandTotal: number;
   isCartOpen: boolean;
   setIsCartOpen: (open: boolean) => void;
+  getCartCount: () => number;
+  getCartTotal: () => number;
 }
 
 export const CartContext = createContext<CartContextType | undefined>(undefined);
@@ -30,8 +37,11 @@ export const useCart = () => {
 };
 
 const CART_STORAGE_KEY = 'mwambo_cart';
+const FREE_DELIVERY_THRESHOLD = 10000; // MWK 10,000
+const DELIVERY_FEE = 500; // MWK 500
 
 export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { toast } = useToast();
   const [items, setItems] = useState<CartItem[]>(() => {
     // Initialize from localStorage
     try {
@@ -54,32 +64,154 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [items]);
 
-  const addItem = useCallback((item: Omit<CartItem, 'quantity'>) => {
+  const addItem = useCallback((item: Omit<CartItem, 'quantity'> & { quantity?: number }) => {
     setItems(prev => {
-      const existing = prev.find(i => i.id === item.id);
-      if (existing) {
-        return prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + 1 } : i);
+      const existing = prev.find(i => i.productId === item.productId);
+      const quantity = item.quantity || 1;
+      
+      // Check stock limits
+      if (item.stock !== undefined && quantity > item.stock) {
+        toast({
+          title: 'Cannot Add to Cart',
+          description: `Only ${item.stock} units available in stock`,
+          variant: 'destructive',
+        });
+        return prev;
       }
-      return [...prev, { ...item, quantity: 1 }];
+
+      // Check max order limit
+      if (item.maxOrder && quantity > item.maxOrder) {
+        toast({
+          title: 'Maximum Order Reached',
+          description: `You can only order up to ${item.maxOrder} units of this product`,
+          variant: 'destructive',
+        });
+        return prev;
+      }
+
+      if (existing) {
+        const newQuantity = existing.quantity + quantity;
+        
+        // Check stock limits for existing item
+        if (item.stock !== undefined && newQuantity > item.stock) {
+          toast({
+            title: 'Cannot Add More',
+            description: `Only ${item.stock - existing.quantity} more units available`,
+            variant: 'destructive',
+          });
+          return prev;
+        }
+
+        // Check max order for existing item
+        if (item.maxOrder && newQuantity > item.maxOrder) {
+          toast({
+            title: 'Maximum Order Reached',
+            description: `You can only order up to ${item.maxOrder} units total`,
+            variant: 'destructive',
+          });
+          return prev;
+        }
+
+        return prev.map(i => 
+          i.productId === item.productId 
+            ? { ...i, quantity: newQuantity } 
+            : i
+        );
+      }
+
+      return [...prev, { 
+        productId: item.productId,
+        name: item.name,
+        price: item.price,
+        image: item.image,
+        unit: item.unit,
+        maxOrder: item.maxOrder,
+        stock: item.stock,
+        quantity 
+      }];
     });
-  }, []);
 
-  const removeItem = useCallback((id: string) => {
-    setItems(prev => prev.filter(i => i.id !== id));
-  }, []);
+    // Show success toast
+    toast({
+      title: 'Added to Cart',
+      description: `${item.name} added to your cart`,
+    });
+  }, [toast]);
 
-  const updateQuantity = useCallback((id: string, quantity: number) => {
+  const removeItem = useCallback((productId: string) => {
+    setItems(prev => {
+      const item = prev.find(i => i.productId === productId);
+      if (item) {
+        toast({
+          title: 'Removed from Cart',
+          description: `${item.name} removed from your cart`,
+        });
+      }
+      return prev.filter(i => i.productId !== productId);
+    });
+  }, [toast]);
+
+  const updateQuantity = useCallback((productId: string, quantity: number) => {
     if (quantity <= 0) {
-      setItems(prev => prev.filter(i => i.id !== id));
+      setItems(prev => {
+        const item = prev.find(i => i.productId === productId);
+        if (item) {
+          toast({
+            title: 'Removed from Cart',
+            description: `${item.name} removed from your cart`,
+          });
+        }
+        return prev.filter(i => i.productId !== productId);
+      });
     } else {
-      setItems(prev => prev.map(i => i.id === id ? { ...i, quantity } : i));
+      setItems(prev => {
+        const item = prev.find(i => i.productId === productId);
+        
+        // Check stock limit
+        if (item?.stock !== undefined && quantity > item.stock) {
+          toast({
+            title: 'Cannot Update Quantity',
+            description: `Only ${item.stock} units available in stock`,
+            variant: 'destructive',
+          });
+          return prev;
+        }
+
+        // Check max order limit
+        if (item?.maxOrder && quantity > item.maxOrder) {
+          toast({
+            title: 'Maximum Order Reached',
+            description: `You can only order up to ${item.maxOrder} units`,
+            variant: 'destructive',
+          });
+          return prev;
+        }
+
+        return prev.map(i => i.productId === productId ? { ...i, quantity } : i);
+      });
     }
-  }, []);
+  }, [toast]);
 
-  const clearCart = useCallback(() => setItems([]), []);
+  const clearCart = useCallback(() => {
+    setItems([]);
+    toast({
+      title: 'Cart Cleared',
+      description: 'All items have been removed from your cart',
+    });
+  }, [toast]);
 
-  const totalItems = items.reduce((sum, i) => sum + i.quantity, 0);
-  const totalPrice = items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  const getCartCount = useCallback(() => {
+    return items.reduce((sum, i) => sum + i.quantity, 0);
+  }, [items]);
+
+  const getCartTotal = useCallback(() => {
+    return items.reduce((sum, i) => sum + i.price * i.quantity, 0);
+  }, [items]);
+
+  const totalItems = getCartCount();
+  const subtotal = getCartTotal();
+  const deliveryFee = subtotal >= FREE_DELIVERY_THRESHOLD ? 0 : DELIVERY_FEE;
+  const grandTotal = subtotal + deliveryFee;
 
   return (
     <CartContext.Provider value={{ 
@@ -89,9 +221,13 @@ export const CartProvider: React.FC<{ children: React.ReactNode }> = ({ children
       updateQuantity, 
       clearCart, 
       totalItems, 
-      totalPrice, 
+      subtotal,
+      deliveryFee,
+      grandTotal,
       isCartOpen, 
-      setIsCartOpen 
+      setIsCartOpen,
+      getCartCount,
+      getCartTotal
     }}>
       {children}
     </CartContext.Provider>

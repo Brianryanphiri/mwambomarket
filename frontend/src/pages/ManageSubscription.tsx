@@ -27,7 +27,10 @@ import {
   Gift,
   Download,
   Printer,
-  ExternalLink
+  ExternalLink,
+  Shield,
+  Info,
+  HelpCircle
 } from 'lucide-react';
 import Header from '@/components/store/Header';
 import Footer from '@/components/store/Footer';
@@ -65,11 +68,13 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Separator } from '@/components/ui/separator';
 import { Progress } from '@/components/ui/progress';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { subscriptionService } from '@/services/subscriptionService';
+import { format, formatDistanceToNow, differenceInHours } from 'date-fns';
 
 const deliveryDays = [
-  'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'
+  'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'
 ];
 
 const ManageSubscription = () => {
@@ -80,13 +85,18 @@ const ManageSubscription = () => {
   const [loading, setLoading] = useState(true);
   const [subscription, setSubscription] = useState<any>(null);
   const [deliveries, setDeliveries] = useState<any[]>([]);
+  const [deliverySlots, setDeliverySlots] = useState<any[]>([]);
   const [editing, setEditing] = useState(false);
   const [pausing, setPausing] = useState(false);
   const [cancelling, setCancelling] = useState(false);
+  const [showRequestLink, setShowRequestLink] = useState(false);
+  const [requestEmail, setRequestEmail] = useState('');
+  const [requestPhone, setRequestPhone] = useState('');
+  const [sendingLink, setSendingLink] = useState(false);
   const [pauseDate, setPauseDate] = useState('');
   const [cancelReason, setCancelReason] = useState('');
   const [activeTab, setActiveTab] = useState('overview');
-  const [upcomingDeliveries, setUpcomingDeliveries] = useState<any[]>([]);
+  const [tokenExpiryHours, setTokenExpiryHours] = useState<number | null>(null);
   
   // Form state for editing
   const [formData, setFormData] = useState({
@@ -101,16 +111,13 @@ const ManageSubscription = () => {
 
   useEffect(() => {
     if (!token || !email) {
-      toast({
-        title: 'Access Denied',
-        description: 'Valid management link required',
-        variant: 'destructive',
-      });
-      navigate('/subscriptions');
+      setShowRequestLink(true);
+      setLoading(false);
       return;
     }
 
     fetchSubscription();
+    fetchDeliverySlots();
   }, [token, email]);
 
   const fetchSubscription = async () => {
@@ -125,40 +132,81 @@ const ManageSubscription = () => {
         deliveryInstructions: data.deliveryInstructions || ''
       });
       
-      // Fetch delivery history
-      const history = await subscriptionService.getDeliveryHistory(data.id);
-      setDeliveries(history);
+      // Calculate token expiry (assuming token expires in 24 hours from creation)
+      if (data.tokenCreatedAt) {
+        const expiryDate = new Date(data.tokenCreatedAt);
+        expiryDate.setHours(expiryDate.getHours() + 24);
+        const hoursLeft = differenceInHours(expiryDate, new Date());
+        setTokenExpiryHours(hoursLeft);
+      }
       
-      // Calculate upcoming deliveries
-      calculateUpcomingDeliveries(data);
-    } catch (error) {
+      // Fetch delivery history
+      try {
+        const history = await subscriptionService.getDeliveryHistory(data.id);
+        setDeliveries(history);
+      } catch (err) {
+        console.error('Error fetching delivery history:', err);
+        // Don't show error, just set empty array
+        setDeliveries([]);
+      }
+    } catch (error: any) {
       console.error('Error fetching subscription:', error);
-      toast({
-        title: 'Error',
-        description: 'Failed to load subscription details',
-        variant: 'destructive',
-      });
-      navigate('/subscriptions');
+      if (error.response?.status === 404) {
+        setShowRequestLink(true);
+      } else {
+        toast({
+          title: 'Error',
+          description: error.response?.data?.message || 'Failed to load subscription details',
+          variant: 'destructive',
+        });
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const calculateUpcomingDeliveries = (sub: any) => {
-    const upcoming = [];
-    let currentDate = new Date(sub.nextDeliveryDate);
-    const intervalWeeks = sub.planInterval === 'weekly' ? 1 : sub.planInterval === 'biweekly' ? 2 : 4;
-    
-    // Calculate next 3 deliveries
-    for (let i = 0; i < 3; i++) {
-      upcoming.push({
-        date: new Date(currentDate),
-        status: i === 0 ? 'Next' : 'Scheduled'
-      });
-      currentDate.setDate(currentDate.getDate() + (intervalWeeks * 7));
+  const fetchDeliverySlots = async () => {
+    try {
+      const slots = await subscriptionService.getDeliverySlots();
+      setDeliverySlots(slots);
+    } catch (error) {
+      console.error('Error fetching delivery slots:', error);
     }
-    
-    setUpcomingDeliveries(upcoming);
+  };
+
+  const handleSendManagementLink = async () => {
+    if (!requestEmail && !requestPhone) {
+      toast({
+        title: 'Information Required',
+        description: 'Please provide either email or phone number',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setSendingLink(true);
+    try {
+      const response = await subscriptionService.sendManagementLink({
+        email: requestEmail || undefined,
+        phone: requestPhone || undefined
+      });
+
+      toast({
+        title: 'Link Sent!',
+        description: `Management link sent to ${response.count} subscription(s)`,
+      });
+
+      setShowRequestLink(false);
+    } catch (error: any) {
+      console.error('Error sending management link:', error);
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to send management link',
+        variant: 'destructive',
+      });
+    } finally {
+      setSendingLink(false);
+    }
   };
 
   const handleUpdate = async () => {
@@ -172,11 +220,11 @@ const ManageSubscription = () => {
       
       setEditing(false);
       fetchSubscription();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error updating subscription:', error);
       toast({
         title: 'Error',
-        description: 'Failed to update subscription',
+        description: error.response?.data?.message || 'Failed to update subscription',
         variant: 'destructive',
       });
     }
@@ -202,11 +250,11 @@ const ManageSubscription = () => {
       
       setPausing(false);
       fetchSubscription();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error pausing subscription:', error);
       toast({
         title: 'Error',
-        description: 'Failed to pause subscription',
+        description: error.response?.data?.message || 'Failed to pause subscription',
         variant: 'destructive',
       });
     }
@@ -223,11 +271,11 @@ const ManageSubscription = () => {
       
       setCancelling(false);
       fetchSubscription();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error cancelling subscription:', error);
       toast({
         title: 'Error',
-        description: 'Failed to cancel subscription',
+        description: error.response?.data?.message || 'Failed to cancel subscription',
         variant: 'destructive',
       });
     }
@@ -243,11 +291,11 @@ const ManageSubscription = () => {
       });
       
       fetchSubscription();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error resuming subscription:', error);
       toast({
         title: 'Error',
-        description: 'Failed to resume subscription',
+        description: error.response?.data?.message || 'Failed to resume subscription',
         variant: 'destructive',
       });
     }
@@ -261,6 +309,8 @@ const ManageSubscription = () => {
         return <Badge className="bg-yellow-500 text-white">Paused ⏸️</Badge>;
       case 'cancelled':
         return <Badge className="bg-red-500 text-white">Cancelled ✕</Badge>;
+      case 'expired':
+        return <Badge className="bg-gray-500 text-white">Expired</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -297,6 +347,87 @@ const ManageSubscription = () => {
     );
   }
 
+  if (showRequestLink) {
+    return (
+      <div className="min-h-screen bg-gradient-to-b from-indigo-50/50 via-white to-purple-50/50 dark:from-indigo-950/20 dark:via-background dark:to-purple-950/20">
+        <Header />
+        
+        <div className="container mx-auto px-4 py-20">
+          <Card className="max-w-md mx-auto">
+            <CardHeader>
+              <CardTitle className="text-2xl font-display">Find Your Subscription</CardTitle>
+              <CardDescription>
+                Enter your email or phone number to receive a management link
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="bg-amber-50 dark:bg-amber-950/30 p-3 rounded-lg flex items-start gap-2">
+                <Info className="w-5 h-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                <p className="text-xs text-amber-800 dark:text-amber-200">
+                  The link in your email may have expired. Request a new one below.
+                </p>
+              </div>
+
+              <div>
+                <Label htmlFor="requestEmail">Email Address</Label>
+                <Input
+                  id="requestEmail"
+                  type="email"
+                  value={requestEmail}
+                  onChange={(e) => setRequestEmail(e.target.value)}
+                  placeholder="john@example.com"
+                />
+              </div>
+
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t" />
+                </div>
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-background px-2 text-muted-foreground">OR</span>
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="requestPhone">Phone Number</Label>
+                <Input
+                  id="requestPhone"
+                  value={requestPhone}
+                  onChange={(e) => setRequestPhone(e.target.value)}
+                  placeholder="0999123456"
+                />
+              </div>
+            </CardContent>
+            <CardFooter className="flex flex-col gap-3">
+              <Button 
+                onClick={handleSendManagementLink} 
+                disabled={sendingLink}
+                className="w-full gap-2"
+              >
+                {sendingLink ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Mail className="w-4 h-4" />
+                )}
+                {sendingLink ? 'Sending...' : 'Send Management Link'}
+              </Button>
+              <Button 
+                variant="outline" 
+                className="w-full gap-2"
+                onClick={() => navigate('/subscriptions')}
+              >
+                <Package className="w-4 h-4" />
+                Browse Subscriptions
+              </Button>
+            </CardFooter>
+          </Card>
+        </div>
+
+        <Footer />
+      </div>
+    );
+  }
+
   if (!subscription) {
     return (
       <div className="min-h-screen bg-background">
@@ -307,9 +438,9 @@ const ManageSubscription = () => {
           <p className="text-muted-foreground mb-8">
             The subscription you're looking for doesn't exist or the link has expired.
           </p>
-          <Button onClick={() => navigate('/subscriptions')}>
-            <ArrowLeft className="w-4 h-4 mr-2" />
-            Browse Subscriptions
+          <Button onClick={() => setShowRequestLink(true)}>
+            <Mail className="w-4 h-4 mr-2" />
+            Request New Link
           </Button>
         </div>
         <Footer />
@@ -354,6 +485,26 @@ const ManageSubscription = () => {
             {getStatusBadge(subscription.status)}
           </div>
         </div>
+
+        {/* Token Expiry Warning */}
+        {tokenExpiryHours !== null && tokenExpiryHours < 2 && (
+          <Alert className="mb-6 bg-amber-50 border-amber-200 dark:bg-amber-950/30 dark:border-amber-800">
+            <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+            <AlertTitle className="text-amber-600 dark:text-amber-400">Link Expiring Soon</AlertTitle>
+            <AlertDescription className="flex items-center justify-between">
+              <span>This management link will expire in less than {tokenExpiryHours} hour(s).</span>
+              <Button 
+                size="sm" 
+                variant="outline" 
+                className="border-amber-300 hover:bg-amber-100 dark:border-amber-700"
+                onClick={() => setShowRequestLink(true)}
+              >
+                <Mail className="w-3 h-3 mr-2" />
+                Request New Link
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* Security Notice */}
         <Card className="mb-6 bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800">
@@ -419,12 +570,12 @@ const ManageSubscription = () => {
                 <div>
                   <p className="font-semibold text-yellow-800 dark:text-yellow-200">Paused Subscription</p>
                   <p className="text-sm text-yellow-600 dark:text-yellow-300">
-                    Paused until: {new Date(subscription.pauseUntil).toLocaleDateString('en-MW', { 
+                    Paused until: {subscription.pauseUntil ? new Date(subscription.pauseUntil).toLocaleDateString('en-MW', { 
                       weekday: 'long', 
                       year: 'numeric', 
                       month: 'long', 
                       day: 'numeric' 
-                    })}
+                    }) : 'Indefinitely'}
                   </p>
                 </div>
               </div>
@@ -444,11 +595,11 @@ const ManageSubscription = () => {
                 <div>
                   <p className="font-semibold text-red-800 dark:text-red-200">Cancelled Subscription</p>
                   <p className="text-sm text-red-600 dark:text-red-300">
-                    Cancelled on: {new Date(subscription.cancelledAt).toLocaleDateString('en-MW', { 
+                    Cancelled on: {subscription.cancelledAt ? new Date(subscription.cancelledAt).toLocaleDateString('en-MW', { 
                       year: 'numeric', 
                       month: 'long', 
                       day: 'numeric' 
-                    })}
+                    }) : 'N/A'}
                   </p>
                   {subscription.cancellationReason && (
                     <p className="text-xs text-red-500 mt-1">
@@ -493,7 +644,7 @@ const ManageSubscription = () => {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex items-center gap-4">
-                    <div className={`w-16 h-16 rounded-xl ${subscription.planBgColor} flex items-center justify-center text-3xl`}>
+                    <div className={`w-16 h-16 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-3xl text-white`}>
                       {subscription.planIcon === 'Leaf' && '🥬'}
                       {subscription.planIcon === 'Milk' && '🥛'}
                       {subscription.planIcon === 'Croissant' && '🥐'}
@@ -516,7 +667,7 @@ const ManageSubscription = () => {
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Items per delivery</p>
-                      <p className="text-lg font-bold">{subscription.planItems} items</p>
+                      <p className="text-lg font-bold">{subscription.planItems || 1} items</p>
                     </div>
                     <div>
                       <p className="text-sm text-muted-foreground">Started on</p>
@@ -582,21 +733,19 @@ const ManageSubscription = () => {
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3">
-                      {upcomingDeliveries.map((delivery, i) => (
+                      {[subscription.nextDeliveryDate].map((date, i) => (
                         <div key={i} className="flex items-center justify-between p-2 bg-muted/30 rounded-lg">
                           <div className="flex items-center gap-2">
                             <Calendar className="w-4 h-4 text-primary" />
                             <span className="text-sm">
-                              {delivery.date.toLocaleDateString('en-MW', { 
+                              {new Date(date).toLocaleDateString('en-MW', { 
                                 weekday: 'short', 
                                 month: 'short', 
                                 day: 'numeric' 
                               })}
                             </span>
                           </div>
-                          <Badge variant={i === 0 ? 'default' : 'outline'}>
-                            {delivery.status}
-                          </Badge>
+                          <Badge>Next</Badge>
                         </div>
                       ))}
                     </div>
@@ -721,12 +870,29 @@ const ManageSubscription = () => {
                       </div>
                       <div>
                         <Label htmlFor="deliveryTime">Preferred Time</Label>
-                        <Input
-                          id="deliveryTime"
-                          value={formData.deliveryTime}
-                          onChange={(e) => setFormData({...formData, deliveryTime: e.target.value})}
-                          placeholder="e.g., Between 10am-2pm"
-                        />
+                        <Select 
+                          value={formData.deliveryTime} 
+                          onValueChange={(value) => setFormData({...formData, deliveryTime: value})}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select time" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {deliverySlots.length > 0 ? (
+                              deliverySlots.map(slot => (
+                                <SelectItem key={slot.id} value={slot.time}>
+                                  {slot.description}
+                                </SelectItem>
+                              ))
+                            ) : (
+                              <>
+                                <SelectItem value="morning">Morning (8AM - 12PM)</SelectItem>
+                                <SelectItem value="afternoon">Afternoon (12PM - 4PM)</SelectItem>
+                                <SelectItem value="evening">Evening (4PM - 8PM)</SelectItem>
+                              </>
+                            )}
+                          </SelectContent>
+                        </Select>
                       </div>
                     </div>
 
@@ -778,7 +944,7 @@ const ManageSubscription = () => {
                   <p className="text-sm text-muted-foreground mb-1">Payment Method</p>
                   <div className="flex items-center gap-2">
                     <CreditCard className="w-5 h-5 text-primary" />
-                    <span className="font-medium capitalize">{subscription.paymentMethod.replace('_', ' ')}</span>
+                    <span className="font-medium capitalize">{subscription.paymentMethod?.replace('_', ' ') || 'Cash on Delivery'}</span>
                   </div>
                   {subscription.paymentReference && (
                     <p className="text-xs text-muted-foreground mt-2">
@@ -792,11 +958,11 @@ const ManageSubscription = () => {
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>Plan price ({subscription.planInterval})</span>
-                      <span>MK {subscription.planPrice.toLocaleString()}</span>
+                      <span>MK {subscription.planPrice?.toLocaleString() || 0}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span>Total paid to date</span>
-                      <span className="font-bold">MK {subscription.totalPaid.toLocaleString()}</span>
+                      <span className="font-bold">MK {subscription.totalPaid?.toLocaleString() || 0}</span>
                     </div>
                   </div>
                 </div>
@@ -804,11 +970,7 @@ const ManageSubscription = () => {
                 <Separator />
 
                 <div className="flex gap-2">
-                  <Button variant="outline" className="gap-2">
-                    <Download className="w-4 h-4" />
-                    Download Invoices
-                  </Button>
-                  <Button variant="outline" className="gap-2">
+                  <Button variant="outline" className="gap-2" onClick={() => window.print()}>
                     <Printer className="w-4 h-4" />
                     Print Summary
                   </Button>
@@ -822,7 +984,7 @@ const ManageSubscription = () => {
         <Card className="mt-8 bg-gradient-to-r from-primary/5 to-transparent">
           <CardContent className="p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <AlertCircle className="w-5 h-5 text-primary" />
+              <HelpCircle className="w-5 h-5 text-primary" />
               <div>
                 <p className="font-medium">Need help with your subscription?</p>
                 <p className="text-sm text-muted-foreground">

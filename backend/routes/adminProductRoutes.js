@@ -140,6 +140,9 @@ router.get('/', async (req, res) => {
         conditions.push('p.stock > 0 AND p.stock <= p.low_stock_alert');
       } else if (req.query.status === 'outOfStock') {
         conditions.push('p.stock <= 0');
+      } else {
+        conditions.push('p.status = ?');
+        params.push(req.query.status);
       }
     }
 
@@ -152,11 +155,20 @@ router.get('/', async (req, res) => {
     if (conditions.length > 0) {
       countQuery += ' AND ' + conditions.join(' AND ');
     }
+    const countParams = [...params]; // Copy params for count query
 
-    // Add sorting
+    // Add sorting - FIXED: Use valid column names
     const sortField = req.query.sortBy || 'created_at';
     const sortOrder = req.query.sortOrder === 'asc' ? 'ASC' : 'DESC';
-    query += ` ORDER BY p.${sortField} ${sortOrder}`;
+    
+    // Validate sort field to prevent SQL injection
+    const validSortFields = [
+      'id', 'name', 'price', 'stock', 'created_at', 'updated_at', 
+      'sold_count', 'rating', 'category', 'status'
+    ];
+    
+    const finalSortField = validSortFields.includes(sortField) ? sortField : 'created_at';
+    query += ` ORDER BY p.${finalSortField} ${sortOrder}`;
 
     // Add pagination
     const page = parseInt(req.query.page) || 1;
@@ -165,9 +177,12 @@ router.get('/', async (req, res) => {
     query += ' LIMIT ? OFFSET ?';
     params.push(limit, offset);
 
+    console.log('Executing query:', query);
+    console.log('With params:', params);
+
     // Execute queries
     const [products] = await pool.query(query, params);
-    const [countResult] = await pool.query(countQuery, params.slice(0, -2));
+    const [countResult] = await pool.query(countQuery, countParams);
 
     // For each product, get images separately
     for (let product of products) {
@@ -235,7 +250,7 @@ router.get('/categories', async (req, res) => {
 router.get('/stats', async (req, res) => {
   try {
     const [total] = await pool.query('SELECT COUNT(*) as count FROM products');
-    const [active] = await pool.query('SELECT COUNT(*) as count FROM products WHERE stock > 0');
+    const [active] = await pool.query('SELECT COUNT(*) as count FROM products WHERE status = "active"');
     const [lowStock] = await pool.query('SELECT COUNT(*) as count FROM products WHERE stock > 0 AND stock <= low_stock_alert');
     const [outOfStock] = await pool.query('SELECT COUNT(*) as count FROM products WHERE stock <= 0');
     

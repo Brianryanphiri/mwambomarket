@@ -65,7 +65,10 @@ if (!process.env.JWT_SECRET || process.env.JWT_SECRET.trim() === '') {
 const app = express();
 
 // Security middleware - apply helmet before everything
-app.use(helmet());
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  crossOriginOpenerPolicy: { policy: "unsafe-none" }
+}));
 
 // Rate limiting
 const generalLimiter = rateLimit({
@@ -87,35 +90,38 @@ const authLimiter = rateLimit({
 // Apply general rate limiting to all requests
 app.use(generalLimiter);
 
-// More permissive CORS for development
+// ============= CORS CONFIGURATION =============
+// Define allowed origins
 const allowedOrigins = [
   'http://localhost:5173',
-  'http://localhost:5174',
   'http://localhost:8080',
-  'http://127.0.0.1:8080',
   'http://localhost:3000',
   process.env.FRONTEND_URL
 ].filter(Boolean);
 
 // CORS configuration
-app.use(cors({
+const corsOptions = {
   origin: function(origin, callback) {
     // Allow requests with no origin (like mobile apps, curl, etc)
     if (!origin) return callback(null, true);
     
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-      return callback(new Error(msg), false);
+    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
     }
-    return callback(null, true);
   },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-}));
+};
+
+// Apply CORS middleware
+app.use(cors(corsOptions));
 
 // Handle preflight requests
-app.options('*', cors());
+app.options('*', cors(corsOptions));
+// ============= END CORS CONFIGURATION =============
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));

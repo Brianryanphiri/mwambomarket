@@ -1,5 +1,37 @@
 import api from './api';
 
+export interface SubscriptionPlan {
+  id: string;
+  name: string;
+  description: string;
+  price: number;
+  originalPrice?: number;
+  interval: 'weekly' | 'biweekly' | 'monthly';
+  category: 'vegetables' | 'dairy' | 'bread' | 'family' | 'mixed';
+  items: number;
+  features: string[];
+  color: string;
+  bgColor: string;
+  icon: string;
+  popularity: number;
+  savings?: number;
+  discount?: number;
+  minimumCommitment?: string;
+  trialDays?: number;
+  setupFee?: number;
+  popular?: boolean;
+  bestValue?: boolean;
+}
+
+export interface DeliverySlot {
+  id: string;
+  time: string;
+  description: string;
+  estimated_time?: string;
+  available: boolean;
+  price: number;
+}
+
 export interface CreateSubscriptionData {
   planId: string;
   customerName: string;
@@ -36,12 +68,13 @@ export interface Subscription {
   planName: string;
   planPrice: number;
   planInterval: string;
-  planCategory: string;
-  planItems: number;
-  planFeatures: string[];
-  planColor: string;
-  planBgColor: string;
-  planIcon: string;
+  planDescription?: string;
+  planCategory?: string;
+  planItems?: number;
+  planFeatures?: string[];
+  planColor?: string;
+  planBgColor?: string;
+  planIcon?: string;
   customerName: string;
   customerEmail: string;
   customerPhone: string;
@@ -58,6 +91,7 @@ export interface Subscription {
   pauseUntil?: string;
   cancelledAt?: string;
   cancellationReason?: string;
+  tokenCreatedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -88,7 +122,7 @@ class SubscriptionService {
   private readonly baseUrl = '/subscriptions';
 
   // Get all active plans
-  async getPublicPlans() {
+  async getPublicPlans(): Promise<SubscriptionPlan[]> {
     try {
       const response = await api.get(`${this.baseUrl}/plans`);
       return response.data || [];
@@ -99,13 +133,25 @@ class SubscriptionService {
   }
 
   // Get single plan details
-  async getPlanDetails(planId: string) {
+  async getPlanDetails(planId: string): Promise<SubscriptionPlan> {
     try {
       const response = await api.get(`${this.baseUrl}/plans/${planId}`);
       return response.data;
     } catch (error) {
       console.error('Error fetching plan details:', error);
       throw error;
+    }
+  }
+
+  // Get delivery slots
+  async getDeliverySlots(): Promise<DeliverySlot[]> {
+    try {
+      const response = await api.get(`${this.baseUrl}/slots`);
+      return response.data || [];
+    } catch (error) {
+      console.error('Error fetching delivery slots:', error);
+      // Return empty array instead of throwing
+      return [];
     }
   }
 
@@ -220,7 +266,8 @@ class SubscriptionService {
       return response.data || [];
     } catch (error) {
       console.error('Error fetching delivery history:', error);
-      throw error;
+      // Return empty array instead of throwing
+      return [];
     }
   }
 

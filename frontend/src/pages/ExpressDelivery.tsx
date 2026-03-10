@@ -1,6 +1,5 @@
-// src/pages/ExpressDelivery.tsx
-import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useState, useEffect, useCallback } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { 
   Zap, Clock, Truck, MapPin, Phone, Mail,
   CheckCircle, AlertCircle, Award, Star,
@@ -18,7 +17,8 @@ import {
   Calendar, X, Copy, CircleCheck,
   CircleAlert, CircleDollarSign,
   CircleDot, CircleSlash, CircleUser,
-  CirclePower, CircleArrowOutUpRight
+  CirclePower, CircleArrowOutUpRight,
+  Loader2
 } from 'lucide-react';
 import Header from '@/components/store/Header';
 import Footer from '@/components/store/Footer';
@@ -42,39 +42,37 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Separator } from "@/components/ui/separator";
+import { useToast } from '@/hooks/use-toast';
+import { useCart } from '@/hooks/useCart';
+import { serviceService } from '@/services/serviceService';
+import type { DeliveryZone, DeliverySlot } from '@/types/service.types';
 
-interface DeliverySlot {
-  id: string;
-  time: string;
-  available: boolean;
-  price: number;
-  estimated: string;
-  icon: any;
-}
+// API base URL
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
 
-interface DeliveryZone {
-  id: string;
-  name: string;
-  coverage: 'full' | 'partial' | 'coming';
-  time: string;
-  fee: number;
-  minOrder: number;
-  icon: any;
-  riders: number;
-}
-
-interface ActiveDelivery {
-  id: string;
-  status: 'preparing' | 'picked-up' | 'on-way' | 'arriving';
-  driver: string;
-  vehicle: string;
-  eta: string;
-  location: string;
-  coordinates: { lat: number; lng: number };
-  progress: number;
-}
+// Skeleton loader
+const ZoneCardSkeleton = () => (
+  <Card className="animate-pulse">
+    <CardContent className="p-6">
+      <div className="h-4 bg-muted rounded w-3/4 mb-4" />
+      <div className="space-y-2">
+        <div className="h-3 bg-muted rounded w-1/2" />
+        <div className="h-3 bg-muted rounded w-2/3" />
+        <div className="h-3 bg-muted rounded w-1/3" />
+      </div>
+    </CardContent>
+  </Card>
+);
 
 const ExpressDelivery = () => {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const { addItem } = useCart();
+  
+  const [zones, setZones] = useState<DeliveryZone[]>([]);
+  const [slots, setSlots] = useState<DeliverySlot[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [postcode, setPostcode] = useState('');
   const [isZoneChecked, setIsZoneChecked] = useState(false);
   const [inZone, setInZone] = useState(false);
@@ -82,7 +80,7 @@ const ExpressDelivery = () => {
   const [urgency, setUrgency] = useState<'normal' | 'express' | 'flash'>('normal');
   const [trackingMode, setTrackingMode] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState({ minutes: 45, seconds: 0 });
-  const [activeDelivery, setActiveDelivery] = useState<ActiveDelivery | null>(null);
+  const [activeDelivery, setActiveDelivery] = useState<any>(null);
   const [showFlashSale, setShowFlashSale] = useState(true);
   const [deliveryProgress, setDeliveryProgress] = useState(0);
 
@@ -102,6 +100,37 @@ const ExpressDelivery = () => {
     return () => clearInterval(timer);
   }, []);
 
+  // Fetch delivery data
+  useEffect(() => {
+    fetchDeliveryData();
+  }, []);
+
+  const fetchDeliveryData = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      console.log('Fetching delivery zones...');
+      const zonesData = await serviceService.getDeliveryZones();
+      console.log('Fetched zones:', zonesData);
+      setZones(zonesData);
+
+      console.log('Fetching delivery slots...');
+      const slotsData = await serviceService.getDeliverySlots();
+      console.log('Fetched slots:', slotsData);
+      setSlots(slotsData);
+    } catch (error) {
+      console.error('Error fetching delivery data:', error);
+      setError('Failed to load delivery information');
+      toast({
+        title: 'Error',
+        description: 'Failed to load delivery information',
+        variant: 'destructive',
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [toast]);
+
   // Simulate active delivery tracking
   useEffect(() => {
     if (trackingMode) {
@@ -112,7 +141,6 @@ const ExpressDelivery = () => {
         vehicle: 'Toyota Hilux - AB 1234',
         eta: '12 minutes',
         location: 'Area 47, Lilongwe',
-        coordinates: { lat: -13.9626, lng: 33.7741 },
         progress: 65
       });
 
@@ -138,81 +166,27 @@ const ExpressDelivery = () => {
     }
   }, [deliveryProgress]);
 
-  const deliveryZones: DeliveryZone[] = [
-    { 
-      id: 'z1', 
-      name: 'Lilongwe City Centre', 
-      coverage: 'full', 
-      time: '30-45 min', 
-      fee: 0, 
-      minOrder: 15000,
-      icon: Building2,
-      riders: 25
-    },
-    { 
-      id: 'z2', 
-      name: 'Area 47 & Surroundings', 
-      coverage: 'full', 
-      time: '20-30 min', 
-      fee: 0, 
-      minOrder: 10000,
-      icon: Store,
-      riders: 18
-    },
-    { 
-      id: 'z3', 
-      name: 'Area 25 & Kanengo', 
-      coverage: 'full', 
-      time: '35-50 min', 
-      fee: 2500, 
-      minOrder: 15000,
-      icon: Factory,
-      riders: 12
-    },
-    { 
-      id: 'z4', 
-      name: 'Lumbadzi', 
-      coverage: 'partial', 
-      time: '45-60 min', 
-      fee: 3500, 
-      minOrder: 20000,
-      icon: MapPin,
-      riders: 8
-    },
-    { 
-      id: 'z5', 
-      name: 'Blantyre CBD', 
-      coverage: 'full', 
-      time: '40-55 min', 
-      fee: 0, 
-      minOrder: 15000,
-      icon: Building2,
-      riders: 20
-    },
-    { 
-      id: 'z6', 
-      name: 'Mzuzu', 
-      coverage: 'coming', 
-      time: 'Coming Soon', 
-      fee: 0, 
-      minOrder: 0,
-      icon: MapPin,
-      riders: 0
-    }
-  ];
-
-  const timeSlots: DeliverySlot[] = [
-    { id: 's1', time: 'As soon as possible', available: true, price: 5000, estimated: '15-25 min', icon: Zap },
-    { id: 's2', time: 'Within 30 minutes', available: true, price: 3500, estimated: '30 min', icon: Timer },
-    { id: 's3', time: 'Within 1 hour', available: true, price: 2500, estimated: '60 min', icon: Clock },
-    { id: 's4', time: 'Schedule for later', available: true, price: 0, estimated: 'Choose time', icon: Calendar }
-  ];
-
   const checkZone = () => {
-    // Simulate zone check
+    // Simulate zone check based on available zones
     if (postcode.length > 2) {
       setIsZoneChecked(true);
+      // Random check for demo - in real app, would check against actual zones
       setInZone(Math.random() > 0.3);
+      
+      if (Math.random() > 0.3) {
+        toast({
+          title: 'Available!',
+          description: 'We deliver to your area',
+          duration: 3000,
+        });
+      } else {
+        toast({
+          title: 'Not Available',
+          description: 'We don\'t deliver to this area yet',
+          variant: 'destructive',
+          duration: 3000,
+        });
+      }
     }
   };
 
@@ -236,6 +210,35 @@ const ExpressDelivery = () => {
     }
   };
 
+  const getCoverageBadge = (coverage: string) => {
+    switch(coverage) {
+      case 'full':
+        return <Badge className="bg-green-500 text-white border-none">Full Coverage</Badge>;
+      case 'partial':
+        return <Badge className="bg-yellow-500 text-white border-none">Partial Coverage</Badge>;
+      case 'coming':
+        return <Badge className="bg-blue-500 text-white border-none">Coming Soon</Badge>;
+      default:
+        return <Badge variant="outline">{coverage}</Badge>;
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <div className="container mx-auto px-4 py-16">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[...Array(6)].map((_, i) => (
+              <ZoneCardSkeleton key={i} />
+            ))}
+          </div>
+        </div>
+        <Footer />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-orange-50 via-red-50 to-yellow-50 dark:from-orange-950/20 dark:via-red-950/20 dark:to-yellow-950/20">
       <Header />
@@ -247,7 +250,7 @@ const ExpressDelivery = () => {
             <div className="absolute top-0 left-0 w-40 h-40 bg-white rounded-full blur-3xl animate-pulse" />
             <div className="absolute bottom-0 right-0 w-60 h-60 bg-yellow-300 rounded-full blur-3xl animate-pulse" />
           </div>
-          <div className="container mx-auto px-4 flex items-center justify-between relative z-10">
+          <div className="container mx-auto px-4 flex items-center justify-between relative z-10 flex-wrap gap-2">
             <div className="flex items-center gap-3">
               <Flame className="w-6 h-6 animate-pulse" />
               <span className="font-bold text-lg">FLASH SALE:</span>
@@ -340,20 +343,20 @@ const ExpressDelivery = () => {
             </div>
 
             <h1 className="text-5xl md:text-7xl font-display font-bold mb-6">
-              Express{' '}
-              <span className="text-yellow-300">Delivery</span>
+              Get groceries delivered{' '}
+              <span className="text-yellow-300">in 2-4 hours</span>
             </h1>
             
             <p className="text-xl text-white/90 max-w-2xl mx-auto mb-10">
-              When you need it now. Get your groceries delivered in as little as 15 minutes.
+              When you need it now. Fast, reliable delivery to your doorstep.
             </p>
 
             {/* Live stats cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 hover:bg-white/15 transition-all">
                 <Timer className="w-8 h-8 text-white mb-3 mx-auto" />
-                <p className="text-2xl font-bold">15-45</p>
-                <p className="text-sm text-white/80">Minutes</p>
+                <p className="text-2xl font-bold">2-4</p>
+                <p className="text-sm text-white/80">Hours</p>
               </div>
               <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-6 border border-white/20 hover:bg-white/15 transition-all">
                 <BadgeCheck className="w-8 h-8 text-white mb-3 mx-auto" />
@@ -382,9 +385,29 @@ const ExpressDelivery = () => {
         </div>
       </div>
 
-      <div className="container mx-auto px-4 py-16 space-y-12">
+      <div className="container mx-auto px-4 py-16">
+        {/* Error State */}
+        {error && (
+          <Card className="mb-8 border-red-200 bg-red-50 dark:bg-red-950/20">
+            <CardContent className="p-6">
+              <div className="flex items-center gap-3 text-red-600 dark:text-red-400">
+                <AlertCircle className="w-5 h-5" />
+                <p>{error}</p>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={fetchDeliveryData}
+                  className="ml-auto"
+                >
+                  Try Again
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Check Delivery Zone */}
-        <Card className="border-2 border-orange-200 dark:border-orange-800 shadow-lg">
+        <Card className="mb-8 border-2 border-orange-200 dark:border-orange-800 shadow-lg">
           <CardContent className="p-6">
             <div className="flex flex-col md:flex-row items-center gap-6">
               <div className="flex-1">
@@ -441,13 +464,13 @@ const ExpressDelivery = () => {
         </Card>
 
         {/* Quick Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
           <Card className="text-center hover:shadow-lg transition-all group">
             <CardContent className="pt-6">
               <div className="w-14 h-14 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-3 group-hover:scale-110 transition-transform">
                 <Zap className="w-7 h-7 text-red-600" />
               </div>
-              <p className="font-semibold">15-Min Express</p>
+              <p className="font-semibold">2-Hour Express</p>
               <p className="text-xs text-muted-foreground mt-1">For urgent needs</p>
             </CardContent>
           </Card>
@@ -485,7 +508,7 @@ const ExpressDelivery = () => {
 
         {/* Live Tracking Demo */}
         {trackingMode && activeDelivery ? (
-          <Card className="bg-gradient-to-br from-green-600 to-emerald-600 text-white border-none shadow-xl">
+          <Card className="mb-8 bg-gradient-to-br from-green-600 to-emerald-600 text-white border-none shadow-xl">
             <CardContent className="p-6">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-xl font-bold flex items-center gap-2">
@@ -565,7 +588,7 @@ const ExpressDelivery = () => {
         ) : (
           <Button 
             onClick={() => setTrackingMode(true)}
-            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white h-12 gap-2 text-base"
+            className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 text-white h-12 gap-2 text-base mb-8"
           >
             <Radar className="w-5 h-5" />
             Try Live Tracking Demo
@@ -573,241 +596,166 @@ const ExpressDelivery = () => {
         )}
 
         {/* Time Slots */}
-        <section>
+        <section className="mb-12">
           <h2 className="text-2xl md:text-3xl font-display font-bold mb-6 flex items-center gap-3">
             <Timer className="w-6 h-6 text-orange-500" />
             Choose Delivery Speed
           </h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {timeSlots.map((slot) => {
-              const Icon = slot.icon;
-              return (
-                <Card
-                  key={slot.id}
-                  className={`cursor-pointer transition-all hover:shadow-xl hover:-translate-y-1 ${
-                    selectedSlot === slot.id ? 'border-2 border-orange-500 bg-orange-50 dark:bg-orange-950/30' : ''
-                  }`}
-                  onClick={() => setSelectedSlot(slot.id)}
-                >
-                  <CardContent className="p-6">
-                    <div className="flex justify-between items-start mb-3">
-                      <div className={`w-12 h-12 rounded-full ${
-                        selectedSlot === slot.id ? 'bg-orange-500' : 'bg-orange-100'
-                      } flex items-center justify-center`}>
-                        <Icon className={`w-6 h-6 ${
-                          selectedSlot === slot.id ? 'text-white' : 'text-orange-600'
-                        }`} />
+          {slots.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="p-8 text-center">
+                <Clock className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
+                <p className="text-muted-foreground">No delivery slots available at the moment</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {slots.map((slot) => {
+                const Icon = slot.icon === 'Zap' ? Zap : slot.icon === 'Timer' ? Timer : Clock;
+                return (
+                  <Card
+                    key={slot.id}
+                    className={`cursor-pointer transition-all hover:shadow-xl hover:-translate-y-1 ${
+                      selectedSlot === slot.id ? 'border-2 border-orange-500 bg-orange-50 dark:bg-orange-950/30' : ''
+                    }`}
+                    onClick={() => {
+                      if (slot.available) {
+                        setSelectedSlot(slot.id);
+                      } else {
+                        toast({
+                          title: 'Not Available',
+                          description: 'This time slot is currently not available',
+                          variant: 'destructive',
+                          duration: 2000,
+                        });
+                      }
+                    }}
+                  >
+                    <CardContent className="p-6">
+                      <div className="flex justify-between items-start mb-3">
+                        <div className={`w-12 h-12 rounded-full ${
+                          selectedSlot === slot.id ? 'bg-orange-500' : 'bg-orange-100'
+                        } flex items-center justify-center`}>
+                          <Icon className={`w-6 h-6 ${
+                            selectedSlot === slot.id ? 'text-white' : 'text-orange-600'
+                          }`} />
+                        </div>
+                        {slot.price > 0 ? (
+                          <Badge className="bg-gradient-to-r from-orange-500 to-red-500 text-white border-none">
+                            +MK {slot.price.toLocaleString()}
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-green-500 text-white border-none">
+                            Free
+                          </Badge>
+                        )}
                       </div>
-                      {slot.price > 0 && (
-                        <Badge className="bg-gradient-to-r from-orange-500 to-red-500 text-white border-none">
-                          +MK {slot.price.toLocaleString()}
-                        </Badge>
+                      <h3 className="font-semibold text-lg mb-1">{slot.time}</h3>
+                      <p className="text-sm text-muted-foreground">Est. {slot.estimated}</p>
+                      {!slot.available && (
+                        <Badge variant="destructive" className="mt-2">Unavailable</Badge>
                       )}
-                    </div>
-                    <h3 className="font-semibold text-lg mb-1">{slot.time}</h3>
-                    <p className="text-sm text-muted-foreground">Est. {slot.estimated}</p>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
         </section>
 
-        {/* Delivery Zones Map */}
-        <section>
+        {/* Delivery Zones */}
+        <section className="mb-12">
           <h2 className="text-2xl md:text-3xl font-display font-bold mb-6 flex items-center gap-3">
             <Map className="w-6 h-6 text-orange-500" />
             Delivery Zones
           </h2>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {deliveryZones.map((zone) => {
-              const Icon = zone.icon;
-              return (
-                <Card key={zone.id} className="hover:shadow-lg transition-all group">
-                  <CardContent className="p-6">
-                    <div className="flex items-start justify-between mb-3">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-10 h-10 rounded-full ${
-                          zone.coverage === 'full' ? 'bg-green-100' :
-                          zone.coverage === 'partial' ? 'bg-yellow-100' : 'bg-blue-100'
-                        } flex items-center justify-center`}>
-                          <Icon className={`w-5 h-5 ${
-                            zone.coverage === 'full' ? 'text-green-600' :
-                            zone.coverage === 'partial' ? 'text-yellow-600' : 'text-blue-600'
-                          }`} />
+          {zones.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="p-8 text-center">
+                <MapPin className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
+                <p className="text-muted-foreground">No delivery zones configured</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {zones.map((zone) => {
+                const Icon = zone.icon === 'Building2' ? Building2 : 
+                            zone.icon === 'Store' ? Store : 
+                            zone.icon === 'Factory' ? Factory : MapPin;
+                return (
+                  <Card key={zone.id} className="hover:shadow-lg transition-all group">
+                    <CardContent className="p-6">
+                      <div className="flex items-start justify-between mb-3">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-full ${
+                            zone.coverage === 'full' ? 'bg-green-100' :
+                            zone.coverage === 'partial' ? 'bg-yellow-100' : 'bg-blue-100'
+                          } flex items-center justify-center`}>
+                            <Icon className={`w-5 h-5 ${
+                              zone.coverage === 'full' ? 'text-green-600' :
+                              zone.coverage === 'partial' ? 'text-yellow-600' : 'text-blue-600'
+                            }`} />
+                          </div>
+                          <h3 className="font-semibold">{zone.name}</h3>
                         </div>
-                        <h3 className="font-semibold">{zone.name}</h3>
+                        {getCoverageBadge(zone.coverage)}
                       </div>
-                      {zone.coverage === 'full' && (
-                        <Badge className="bg-green-500 text-white border-none">Full</Badge>
-                      )}
-                      {zone.coverage === 'partial' && (
-                        <Badge className="bg-yellow-500 text-white border-none">Partial</Badge>
-                      )}
-                      {zone.coverage === 'coming' && (
-                        <Badge className="bg-blue-500 text-white border-none">Soon</Badge>
-                      )}
-                    </div>
 
-                    <div className="space-y-2 mt-4">
-                      <div className="flex items-center gap-2 text-sm">
-                        <Clock className="w-4 h-4 text-muted-foreground" />
-                        <span>{zone.time}</span>
+                      <div className="space-y-2 mt-4">
+                        <div className="flex items-center gap-2 text-sm">
+                          <Clock className="w-4 h-4 text-muted-foreground" />
+                          <span>{zone.time}</span>
+                        </div>
+                        
+                        {zone.fee > 0 ? (
+                          <div className="flex items-center gap-2 text-sm">
+                            <Truck className="w-4 h-4 text-muted-foreground" />
+                            <span>Delivery: MK {zone.fee.toLocaleString()}</span>
+                          </div>
+                        ) : zone.coverage !== 'coming' && (
+                          <div className="flex items-center gap-2 text-sm text-green-600">
+                            <CheckCircle className="w-4 h-4" />
+                            <span>Free Delivery</span>
+                          </div>
+                        )}
+
+                        {zone.minOrder > 0 && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <ShoppingBag className="w-4 h-4 text-muted-foreground" />
+                            <span>Min. MK {zone.minOrder.toLocaleString()}</span>
+                          </div>
+                        )}
+
+                        {zone.riders && zone.riders > 0 && (
+                          <div className="flex items-center gap-2 text-sm">
+                            <Bike className="w-4 h-4 text-muted-foreground" />
+                            <span>{zone.riders} active riders</span>
+                          </div>
+                        )}
                       </div>
-                      
-                      {zone.fee > 0 ? (
-                        <div className="flex items-center gap-2 text-sm">
-                          <Truck className="w-4 h-4 text-muted-foreground" />
-                          <span>Delivery: MK {zone.fee.toLocaleString()}</span>
-                        </div>
-                      ) : zone.coverage !== 'coming' && (
-                        <div className="flex items-center gap-2 text-sm text-green-600">
-                          <CheckCircle className="w-4 h-4" />
-                          <span>Free Delivery</span>
-                        </div>
-                      )}
-
-                      {zone.minOrder > 0 && (
-                        <div className="flex items-center gap-2 text-sm">
-                          <ShoppingBag className="w-4 h-4 text-muted-foreground" />
-                          <span>Min. MK {zone.minOrder.toLocaleString()}</span>
-                        </div>
-                      )}
-
-                      {zone.riders > 0 && (
-                        <div className="flex items-center gap-2 text-sm">
-                          <Bike className="w-4 h-4 text-muted-foreground" />
-                          <span>{zone.riders} active riders</span>
-                        </div>
-                      )}
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* Express Guarantee */}
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Card className="bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-950/30 dark:to-emerald-950/30 border-green-200 dark:border-green-800">
-            <CardContent className="p-6 text-center">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-green-500 to-emerald-500 flex items-center justify-center mx-auto mb-4">
-                <Award className="w-8 h-8 text-white" />
-              </div>
-              <h3 className="font-semibold text-lg mb-2">On-Time Guarantee</h3>
-              <p className="text-sm text-muted-foreground">Or your next delivery is free</p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-950/30 dark:to-indigo-950/30 border-blue-200 dark:border-blue-800">
-            <CardContent className="p-6 text-center">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center mx-auto mb-4">
-                <Thermometer className="w-8 h-8 text-white" />
-              </div>
-              <h3 className="font-semibold text-lg mb-2">Temperature Controlled</h3>
-              <p className="text-sm text-muted-foreground">Fresh & frozen items protected</p>
-            </CardContent>
-          </Card>
-
-          <Card className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-950/30 dark:to-pink-950/30 border-purple-200 dark:border-purple-800">
-            <CardContent className="p-6 text-center">
-              <div className="w-16 h-16 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center mx-auto mb-4">
-                <Heart className="w-8 h-8 text-white" />
-              </div>
-              <h3 className="font-semibold text-lg mb-2">Contactless Delivery</h3>
-              <p className="text-sm text-muted-foreground">Safe & secure handoff</p>
-            </CardContent>
-          </Card>
-        </section>
-
-        {/* FAQ */}
-        <section>
-          <h2 className="text-2xl md:text-3xl font-display font-bold mb-6">
-            Express Delivery FAQ
-          </h2>
-          
-          <Card>
-            <CardContent className="p-6">
-              <Accordion type="single" collapsible className="w-full">
-                <AccordionItem value="item-1">
-                  <AccordionTrigger className="text-lg font-medium">
-                    How fast is express delivery?
-                  </AccordionTrigger>
-                  <AccordionContent className="text-muted-foreground">
-                    Our express delivery service gets your groceries to you in as little as 15 minutes 
-                    for urgent orders. Standard express is 30-45 minutes depending on your location.
-                  </AccordionContent>
-                </AccordionItem>
-
-                <AccordionItem value="item-2">
-                  <AccordionTrigger className="text-lg font-medium">
-                    What areas do you cover?
-                  </AccordionTrigger>
-                  <AccordionContent className="text-muted-foreground">
-                    We currently cover most areas in Lilongwe and Blantyre with full coverage. 
-                    Some areas have partial coverage with extended delivery times. Check your zone above.
-                  </AccordionContent>
-                </AccordionItem>
-
-                <AccordionItem value="item-3">
-                  <AccordionTrigger className="text-lg font-medium">
-                    How much does express delivery cost?
-                  </AccordionTrigger>
-                  <AccordionContent className="text-muted-foreground">
-                    Prices start from MK 2,500 for within 1 hour delivery. Express within 30 minutes is 
-                    MK 3,500, and ASAP (15-25 min) is MK 5,000. Free delivery applies for orders above 
-                    minimum thresholds in certain zones.
-                  </AccordionContent>
-                </AccordionItem>
-
-                <AccordionItem value="item-4">
-                  <AccordionTrigger className="text-lg font-medium">
-                    Can I track my delivery?
-                  </AccordionTrigger>
-                  <AccordionContent className="text-muted-foreground">
-                    Yes! Once your order is confirmed, you'll get real-time tracking updates via SMS 
-                    and can monitor your delivery's progress on our website with our live tracking feature.
-                  </AccordionContent>
-                </AccordionItem>
-
-                <AccordionItem value="item-5">
-                  <AccordionTrigger className="text-lg font-medium">
-                    What if my delivery is late?
-                  </AccordionTrigger>
-                  <AccordionContent className="text-muted-foreground">
-                    We guarantee on-time delivery. If we're late, your next delivery is free. 
-                    Just contact our support team within 24 hours.
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
-            </CardContent>
-          </Card>
-        </section>
-
-        {/* Contact Support */}
-        <Card className="bg-gradient-to-br from-orange-500 to-red-500 text-white border-none">
-          <CardContent className="p-8 text-center">
-            <h2 className="text-2xl md:text-3xl font-display font-bold mb-4">
-              Need Help with Express Delivery?
-            </h2>
-            <p className="text-white/90 mb-6 max-w-md mx-auto">
-              Our support team is available 24/7 to assist with urgent deliveries and questions
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Button size="lg" className="bg-white text-orange-600 hover:bg-white/90 h-12 px-8 gap-2">
-                <Phone className="w-5 h-5" />
-                Call Support
-              </Button>
-              <Button size="lg" variant="outline" className="border-white text-white hover:bg-white/20 h-12 px-8 gap-2">
-                <Mail className="w-5 h-5" />
-                Email Us
-              </Button>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
-          </CardContent>
-        </Card>
+          )}
+        </section>
+
+        {/* CTA Button */}
+        <div className="text-center">
+          <Button
+            onClick={() => navigate('/shop')}
+            className="bg-gradient-to-r from-orange-500 to-red-500 text-white h-14 px-12 text-lg gap-3 rounded-full shadow-lg hover:shadow-xl transition-all"
+          >
+            <ShoppingBag className="w-5 h-5" />
+            Order Now
+          </Button>
+          <p className="text-sm text-muted-foreground mt-3">
+            Free delivery on orders over MK 15,000
+          </p>
+        </div>
       </div>
 
       <Footer />

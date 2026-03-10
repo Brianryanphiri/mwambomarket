@@ -11,22 +11,32 @@ import LoadingSpinner from '@/components/ui/loading-spinner';
 // Lazy load components
 const Dashboard = lazy(() => import('@/pages/admin/Dashboard'));
 const Analytics = lazy(() => import('@/pages/admin/Analytics'));
+const Reports = lazy(() => import('@/pages/admin/Reports'));
+
+// Products
 const ProductList = lazy(() => import('@/pages/admin/Products/ProductList'));
 const ProductForm = lazy(() => import('@/pages/admin/Products/ProductForm'));
+
+// Orders
 const OrderList = lazy(() => import('@/pages/admin/Orders/OrderList'));
 const OrderDetails = lazy(() => import('@/pages/admin/Orders/OrderDetails'));
+
+// Customers
 const CustomerList = lazy(() => import('@/pages/admin/Customers/CustomerList'));
 const CustomerDetails = lazy(() => import('@/pages/admin/Customers/CustomerDetails'));
-const InventoryList = lazy(() => import('@/pages/admin/Inventory/InventoryList'));
 
-// Categories
+// Inventory
+const InventoryList = lazy(() => import('@/pages/admin/Inventory/InventoryList'));
+const Categories = lazy(() => import('@/pages/admin/Inventory/Categories'));
+const Brands = lazy(() => import('@/pages/admin/Inventory/Brands'));
+const Suppliers = lazy(() => import('@/pages/admin/Inventory/Suppliers'));
+const Warehouse = lazy(() => import('@/pages/admin/Inventory/Warehouse'));
+
+// Categories (separate from inventory categories)
 const CategoryList = lazy(() => import('@/pages/admin/Categories/CategoryList'));
 const CategoryForm = lazy(() => import('@/pages/admin/Categories/CategoryForm'));
 
-// Reports
-const Reports = lazy(() => import('@/pages/admin/Reports'));
-
-// Service components
+// Services
 const ServiceList = lazy(() => import('@/pages/admin/services/ServiceList'));
 const FamilyPackages = lazy(() => import('@/pages/admin/services/FamilyPackages'));
 const DailyFresh = lazy(() => import('@/pages/admin/services/DailyFresh'));
@@ -35,7 +45,7 @@ const OfficePacks = lazy(() => import('@/pages/admin/services/OfficePacks'));
 const StudentPacks = lazy(() => import('@/pages/admin/services/StudentPacks'));
 const ExpressDelivery = lazy(() => import('@/pages/admin/services/ExpressDelivery'));
 
-// ============= NEW SUBSCRIPTION MANAGEMENT COMPONENTS =============
+// ============= SUBSCRIPTION MANAGEMENT COMPONENTS =============
 const ActiveSubscribers = lazy(() => import('@/pages/admin/subscriptions/ActiveSubscribers'));
 const SubscriptionDeliveries = lazy(() => import('@/pages/admin/subscriptions/SubscriptionDeliveries'));
 const SubscriptionOrders = lazy(() => import('@/pages/admin/subscriptions/SubscriptionOrders'));
@@ -47,24 +57,18 @@ const PendingCalls = lazy(() => import('@/pages/admin/subscriptions/PendingCalls
 const SubscriptionReminders = lazy(() => import('@/pages/admin/subscriptions/SubscriptionReminders'));
 // ================================================================
 
-// Marketing components
+// Marketing
 const Discounts = lazy(() => import('@/pages/admin/marketing/Discounts'));
 const Promotions = lazy(() => import('@/pages/admin/marketing/Promotions'));
 const Newsletter = lazy(() => import('@/pages/admin/marketing/Newsletter'));
 
-// Inventory components
-const Categories = lazy(() => import('@/pages/admin/Inventory/Categories'));
-const Brands = lazy(() => import('@/pages/admin/Inventory/Brands'));
-const Suppliers = lazy(() => import('@/pages/admin/Inventory/Suppliers'));
-const Warehouse = lazy(() => import('@/pages/admin/Inventory/Warehouse'));
-
-// Content components
+// Content
 const Pages = lazy(() => import('@/pages/admin/content/Pages'));
 const Blog = lazy(() => import('@/pages/admin/content/Blog'));
 const Media = lazy(() => import('@/pages/admin/content/Media'));
 const FAQ = lazy(() => import('@/pages/admin/content/FAQ'));
 
-// Settings components
+// Settings
 const Settings = lazy(() => import('@/pages/admin/settings/Settings'));
 const PaymentSettings = lazy(() => import('@/pages/admin/settings/PaymentSettings'));
 const ShippingSettings = lazy(() => import('@/pages/admin/settings/ShippingSettings'));
@@ -172,12 +176,6 @@ const AdminRoutes = () => {
               <OrderDetails />
             </Suspense>
           } />
-          {/* Subscription Orders */}
-          <Route path="subscriptions" element={
-            <Suspense fallback={<LoadingFallback />}>
-              <SubscriptionOrders />
-            </Suspense>
-          } />
         </Route>
         
         {/* ============= CUSTOMERS MANAGEMENT ============= */}
@@ -190,6 +188,53 @@ const AdminRoutes = () => {
           <Route path=":email" element={
             <Suspense fallback={<LoadingFallback />}>
               <CustomerDetails />
+            </Suspense>
+          } />
+        </Route>
+
+        {/* ============= INVENTORY MANAGEMENT ============= */}
+        <Route path="inventory">
+          <Route index element={
+            <Suspense fallback={<LoadingFallback />}>
+              <InventoryList />
+            </Suspense>
+          } />
+          <Route path="low-stock" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <InventoryList />
+            </Suspense>
+          } />
+          <Route path="out-of-stock" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <InventoryList />
+            </Suspense>
+          } />
+          
+          {/* Categories */}
+          <Route path="categories" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Categories />
+            </Suspense>
+          } />
+          
+          {/* Brands */}
+          <Route path="brands" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Brands />
+            </Suspense>
+          } />
+          
+          {/* Suppliers */}
+          <Route path="suppliers" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Suppliers />
+            </Suspense>
+          } />
+          
+          {/* Warehouse */}
+          <Route path="warehouse" element={
+            <Suspense fallback={<LoadingFallback />}>
+              <Warehouse />
             </Suspense>
           } />
         </Route>
@@ -370,12 +415,12 @@ const AdminRoutes = () => {
           {/* Delivery Schedule */}
           <Route path="deliveries" element={
             <Suspense fallback={<LoadingFallback />}>
-              <DeliverySchedule />
+              <SubscriptionDeliveries />
             </Suspense>
           } />
           
           {/* Pending Calls */}
-          <Route path="calls" element={
+          <Route path="pending-calls" element={
             <Suspense fallback={<LoadingFallback />}>
               <PendingCalls />
             </Suspense>
@@ -429,25 +474,6 @@ const AdminRoutes = () => {
           <Route path="newsletter" element={
             <Suspense fallback={<LoadingFallback />}>
               <Newsletter />
-            </Suspense>
-          } />
-        </Route>
-
-        {/* ============= INVENTORY MANAGEMENT ============= */}
-        <Route path="inventory">
-          <Route index element={
-            <Suspense fallback={<LoadingFallback />}>
-              <InventoryList />
-            </Suspense>
-          } />
-          <Route path="low-stock" element={
-            <Suspense fallback={<LoadingFallback />}>
-              <InventoryList />
-            </Suspense>
-          } />
-          <Route path="out-of-stock" element={
-            <Suspense fallback={<LoadingFallback />}>
-              <InventoryList />
             </Suspense>
           } />
         </Route>

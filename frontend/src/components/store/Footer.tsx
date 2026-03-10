@@ -239,6 +239,7 @@ const Footer = () => {
                 <Mail className="w-4 h-4 shrink-0" />
                 <a href="mailto:hello@mwambo.store" className="hover:underline">hello@mwambo.store</a>
               </li>
+              {/* Updated contact info with Area 47, Lilongwe */}
               <li className="flex items-start gap-2 hover:opacity-100 transition-opacity">
                 <MapPin className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>Area 47, Lilongwe, Malawi</span>
@@ -272,7 +273,7 @@ const Footer = () => {
           </div>
         </div>
 
-        {/* Bottom Bar */}
+        {/* Bottom Bar - Updated with correct policy links */}
         <div className="border-t border-primary-foreground/10 mt-8 pt-6 flex flex-col md:flex-row items-center justify-between gap-4 text-sm opacity-50">
           <div>
             © {currentYear} Mwambo Store. All rights reserved.

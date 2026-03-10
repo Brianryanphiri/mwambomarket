@@ -22,17 +22,27 @@ import {
   createCategory,
   updateCategory,
   deleteCategory,
-  toggleCategoryStatus
+  toggleCategoryStatus,
+  // Bulk operations
+  bulkDeleteProducts,
+  bulkUpdateStatus,
+  duplicateProduct
 } from '../controllers/productController.js';
 
 const router = express.Router();
 
 // ============= PUBLIC ROUTES (No auth required) =============
+// IMPORTANT: Specific routes must come BEFORE parameterized routes
 
 // @route   GET /api/products
-// @desc    Get all products for public view with pagination and filters
+// @desc    Get all products with pagination and filters
 // @access  Public
 router.get('/', getProducts);
+
+// @route   GET /api/products/categories
+// @desc    Get all categories with product counts
+// @access  Public
+router.get('/categories', getCategories);
 
 // @route   GET /api/products/featured
 // @desc    Get featured products
@@ -41,9 +51,10 @@ router.get('/featured', async (req, res) => {
   try {
     const [products] = await pool.query(`
       SELECT 
-        p.id, p.name, p.price, p.original_price as original_price,
+        p.id, p.name, p.price, p.original_price,
         p.unit, p.category, p.rating, p.is_featured,
-        p.is_best_seller, p.is_on_sale, p.is_new, p.stock
+        p.is_best_seller, p.is_on_sale, p.is_new, p.stock,
+        p.status, p.sku
       FROM products p
       WHERE p.status = 'active' AND (p.is_featured = 1 OR p.is_best_seller = 1)
       ORDER BY p.sold_count DESC
@@ -92,27 +103,23 @@ router.get('/deals', getDeals);
 // @access  Public
 router.get('/trending', getTrending);
 
-// @route   GET /api/products/categories
-// @desc    Get all categories with product counts
+// @route   GET /api/products/category/:category
+// @desc    Get products by category name
 // @access  Public
-router.get('/categories', getCategories);
+router.get('/category/:category', getByCategory);
 
 // @route   GET /api/products/categories/:id
 // @desc    Get single category by ID
 // @access  Public
 router.get('/categories/:id', getCategory);
 
-// @route   GET /api/products/category/:category
-// @desc    Get products by category (using category name)
-// @access  Public
-router.get('/category/:category', getByCategory);
-
 // @route   GET /api/products/:id
-// @desc    Get single product by ID
+// @desc    Get single product by ID (MUST BE LAST)
 // @access  Public
 router.get('/:id', getProduct);
 
 // ============= ADMIN ROUTES (Protected) =============
+// IMPORTANT: Admin routes must be properly ordered
 
 // @route   GET /api/admin/products/inventory/summary
 // @desc    Get inventory summary
@@ -148,6 +155,21 @@ router.delete('/categories/:id', protect, admin(), deleteCategory);
 // @desc    Toggle category status
 // @access  Private (Admin)
 router.patch('/categories/:id/toggle', protect, admin(), toggleCategoryStatus);
+
+// @route   POST /api/admin/products/bulk-delete
+// @desc    Bulk delete products
+// @access  Private (Admin)
+router.post('/bulk-delete', protect, admin(), bulkDeleteProducts);
+
+// @route   POST /api/admin/products/bulk-status
+// @desc    Bulk update product status
+// @access  Private (Admin)
+router.post('/bulk-status', protect, admin(), bulkUpdateStatus);
+
+// @route   POST /api/admin/products/:id/duplicate
+// @desc    Duplicate a product
+// @access  Private (Admin)
+router.post('/:id/duplicate', protect, admin(), duplicateProduct);
 
 // @route   POST /api/admin/products
 // @desc    Create a new product

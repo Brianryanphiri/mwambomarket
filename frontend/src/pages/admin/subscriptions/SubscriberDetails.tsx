@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import api from '@/services/api';
 import {
   ArrowLeft,
   User,
@@ -32,16 +33,7 @@ import {
   FileText,
   History,
   Settings,
-  Shield,
-  Award,
-  Star,
-  TrendingUp,
-  Users,
-  Home,
-  ChevronLeft,
-  ChevronRight,
   Plus,
-  Minus,
   Copy,
   ExternalLink
 } from 'lucide-react';
@@ -88,90 +80,87 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { useToast } from '@/hooks/use-toast';
-import { format, formatDistance, addDays, subDays } from 'date-fns';
+import { format, formatDistance, addDays } from 'date-fns';
 
 interface Subscriber {
   id: string;
-  subscriptionNumber: string;
-  planId: string;
-  planName: string;
-  planPrice: number;
-  planInterval: string;
-  planDescription: string;
-  planFeatures: string[];
-  customerName: string;
-  customerEmail: string;
-  customerPhone: string;
-  customerAvatar?: string;
-  customerNotes?: string;
-  startDate: string;
-  nextDeliveryDate: string;
-  deliveryDay: string;
-  deliveryTime?: string;
-  deliveryAddress: string;
-  deliveryInstructions?: string;
-  paymentMethod: string;
-  paymentDetails?: {
-    accountName?: string;
-    accountNumber?: string;
-    bank?: string;
-  };
-  totalPaid: number;
-  totalDeliveries: number;
-  successfulDeliveries: number;
-  missedDeliveries: number;
+  subscription_number: string;
+  plan_id: string;
+  plan_name: string;
+  plan_price: number;
+  plan_interval: string;
+  plan_description: string;
+  plan_features: string[];
+  customer_name: string;
+  customer_email: string;
+  customer_phone: string;
+  customer_avatar?: string;
+  admin_notes?: string;
+  start_date: string;
+  next_delivery_date: string;
+  delivery_day: string;
+  delivery_time?: string;
+  delivery_address: string;
+  delivery_instructions?: string;
+  payment_method: string;
+  payment_reference?: string;
+  total_paid: number;
   status: 'pending' | 'active' | 'paused' | 'cancelled' | 'expired';
-  pauseUntil?: string;
-  cancelledAt?: string;
-  cancellationReason?: string;
-  callStatus: 'pending' | 'called' | 'confirmed' | 'no_answer' | 'call_later';
-  callNotes?: string;
-  lastCallDate?: string;
-  nextCallDate?: string;
-  paymentStatus: 'paid' | 'pending' | 'overdue';
-  lastPaymentDate?: string;
-  nextPaymentDate?: string;
-  reminderSent: boolean;
-  lastReminderDate?: string;
-  reminderPreferences: {
-    email: boolean;
-    sms: boolean;
-    payment: boolean;
-    delivery: boolean;
-  };
-  notes: Array<{
-    id: string;
-    content: string;
-    type: string;
-    createdBy: string;
-    createdAt: string;
-  }>;
+  pause_until?: string;
+  cancelled_at?: string;
+  cancellation_reason?: string;
+  call_status: 'pending' | 'called' | 'confirmed' | 'no_answer' | 'call_later';
+  call_notes?: string;
+  last_call_date?: string;
+  next_call_date?: string;
+  reminder_sent: boolean;
+  last_reminder_date?: string;
+  next_reminder_date?: string;
   tags: string[];
-  createdAt: string;
-  updatedAt: string;
+  created_at: string;
+  updated_at: string;
 }
 
 interface Delivery {
   id: string;
-  deliveryNumber: string;
-  scheduledDate: string;
-  actualDeliveryDate?: string;
+  delivery_number: string;
+  delivery_date: string;
+  delivery_time?: string;
   status: 'scheduled' | 'processing' | 'out_for_delivery' | 'delivered' | 'failed' | 'skipped' | 'rescheduled';
-  riderName?: string;
-  trackingNumber?: string;
-  amount: number;
-  paymentStatus: 'pending' | 'paid' | 'failed';
-  items: Array<{ name: string; quantity: number }>;
+  rider_name?: string;
+  tracking_number?: string;
+  notes?: string;
 }
 
 interface Invoice {
   id: string;
-  invoiceNumber: string;
-  issueDate: string;
-  dueDate: string;
-  paidDate?: string;
-  amount: number;
+  invoice_number: string;
+  issue_date: string;
+  due_date: string;
+  paid_date?: string;
+  total: number;
+  amount_paid: number;
   status: 'draft' | 'sent' | 'paid' | 'overdue' | 'cancelled';
+  payment_method?: string;
+  payment_reference?: string;
+}
+
+interface Note {
+  id: string;
+  content: string;
+  type: string;
+  created_by: string;
+  created_at: string;
+}
+
+interface Reminder {
+  id: string;
+  reminder_type: string;
+  message: string;
+  scheduled_date: string;
+  sent: boolean;
+  sent_at?: string;
+  created_at: string;
 }
 
 const SubscriberDetails = () => {
@@ -183,20 +172,25 @@ const SubscriberDetails = () => {
   const [subscriber, setSubscriber] = useState<Subscriber | null>(null);
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
   const [activeTab, setActiveTab] = useState('overview');
-  const [isEditing, setIsEditing] = useState(false);
   
+  // Dialogs state
   const [showCallDialog, setShowCallDialog] = useState(false);
   const [showNoteDialog, setShowNoteDialog] = useState(false);
   const [showReminderDialog, setShowReminderDialog] = useState(false);
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [showPauseDialog, setShowPauseDialog] = useState(false);
-  const [showEditDialog, setShowEditDialog] = useState(false);
+  const [showAddDeliveryDialog, setShowAddDeliveryDialog] = useState(false);
+  const [showGenerateInvoiceDialog, setShowGenerateInvoiceDialog] = useState(false);
+  const [showEditAdminNotes, setShowEditAdminNotes] = useState(false);
   
+  // Form states
   const [callForm, setCallForm] = useState({
-    status: 'pending',
+    call_status: 'called',
     notes: '',
-    callLaterDate: ''
+    next_call_date: ''
   });
   
   const [noteForm, setNoteForm] = useState({
@@ -205,169 +199,51 @@ const SubscriberDetails = () => {
   });
   
   const [reminderForm, setReminderForm] = useState({
-    type: 'payment',
+    reminder_type: 'payment',
     message: '',
-    sendEmail: true,
-    sendSms: false
+    scheduled_date: ''
   });
   
   const [pauseForm, setPauseForm] = useState({
-    untilDate: '',
+    until_date: '',
     reason: ''
   });
   
-  const [editForm, setEditForm] = useState({
-    customerName: '',
-    customerEmail: '',
-    customerPhone: '',
-    deliveryAddress: '',
-    deliveryInstructions: '',
-    deliveryDay: '',
-    deliveryTime: '',
-    paymentMethod: '',
+  const [deliveryForm, setDeliveryForm] = useState({
+    delivery_date: '',
+    delivery_time: '',
+    status: 'scheduled',
+    tracking_number: '',
     notes: ''
   });
+  
+  const [invoiceForm, setInvoiceForm] = useState({
+    amount: '',
+    due_date: '',
+    notes: ''
+  });
+  
+  const [adminNotes, setAdminNotes] = useState('');
 
+  // Fetch all data
   useEffect(() => {
     if (id) {
       fetchSubscriberDetails();
+      fetchDeliveries();
+      fetchInvoices();
+      fetchNotes();
+      fetchReminders();
     }
   }, [id]);
 
   const fetchSubscriberDetails = async () => {
     setLoading(true);
     try {
-      // Replace with actual API call
-      const mockSubscriber: Subscriber = {
-        id: id || '1',
-        subscriptionNumber: 'SUB-202602-0001',
-        planId: '7',
-        planName: 'Weekly Veggie Box',
-        planPrice: 15000,
-        planInterval: 'weekly',
-        planDescription: 'Fresh vegetables delivered every week',
-        planFeatures: [
-          '8-10 seasonal vegetables',
-          'Free delivery',
-          'Skip or cancel anytime',
-          'Flexible delivery day',
-          'Quality guarantee'
-        ],
-        customerName: 'Brian Phiri',
-        customerEmail: 'brian.phiri@example.com',
-        customerPhone: '+265991234567',
-        customerNotes: 'Prefers morning deliveries, has a dog at home',
-        startDate: '2026-02-25',
-        nextDeliveryDate: '2026-03-04',
-        deliveryDay: 'tuesday',
-        deliveryTime: '10:00 - 12:00',
-        deliveryAddress: 'Area 123, Lilongwe, Near the market',
-        deliveryInstructions: 'Leave with security guard if not home',
-        paymentMethod: 'airtel_money',
-        paymentDetails: {
-          accountName: 'Brian Phiri',
-          accountNumber: '0991234567'
-        },
-        totalPaid: 15000,
-        totalDeliveries: 1,
-        successfulDeliveries: 1,
-        missedDeliveries: 0,
-        status: 'active',
-        callStatus: 'confirmed',
-        lastCallDate: '2026-02-24T14:30:00Z',
-        paymentStatus: 'paid',
-        lastPaymentDate: '2026-02-25T10:30:00Z',
-        nextPaymentDate: '2026-03-04T10:30:00Z',
-        reminderSent: true,
-        lastReminderDate: '2026-02-24T09:00:00Z',
-        reminderPreferences: {
-          email: true,
-          sms: true,
-          payment: true,
-          delivery: true
-        },
-        notes: [
-          {
-            id: '1',
-            content: 'Customer confirmed subscription details over phone',
-            type: 'call',
-            createdBy: 'Admin User',
-            createdAt: '2026-02-24T14:35:00Z'
-          },
-          {
-            id: '2',
-            content: 'Prefers delivery between 10am-12pm',
-            type: 'delivery',
-            createdBy: 'Admin User',
-            createdAt: '2026-02-24T14:36:00Z'
-          }
-        ],
-        tags: ['vip', 'morning-delivery', 'verified'],
-        createdAt: '2026-02-25T10:30:00Z',
-        updatedAt: '2026-02-25T10:30:00Z'
-      };
-
-      const mockDeliveries: Delivery[] = [
-        {
-          id: '1',
-          deliveryNumber: 'DEL-202602-001',
-          scheduledDate: '2026-02-25',
-          actualDeliveryDate: '2026-02-25T12:15:00Z',
-          status: 'delivered',
-          riderName: 'James Banda',
-          trackingNumber: 'TRK123456',
-          amount: 15000,
-          paymentStatus: 'paid',
-          items: [{ name: 'Weekly Veggie Box', quantity: 1 }]
-        },
-        {
-          id: '2',
-          deliveryNumber: 'DEL-202603-001',
-          scheduledDate: '2026-03-04',
-          status: 'scheduled',
-          amount: 15000,
-          paymentStatus: 'pending',
-          items: [{ name: 'Weekly Veggie Box', quantity: 1 }]
-        }
-      ];
-
-      const mockInvoices: Invoice[] = [
-        {
-          id: '1',
-          invoiceNumber: 'INV-202602-001',
-          issueDate: '2026-02-25',
-          dueDate: '2026-03-04',
-          paidDate: '2026-02-25',
-          amount: 15000,
-          status: 'paid'
-        },
-        {
-          id: '2',
-          invoiceNumber: 'INV-202603-001',
-          issueDate: '2026-03-04',
-          dueDate: '2026-03-11',
-          amount: 15000,
-          status: 'sent'
-        }
-      ];
-
-      setSubscriber(mockSubscriber);
-      setDeliveries(mockDeliveries);
-      setInvoices(mockInvoices);
-      
-      setEditForm({
-        customerName: mockSubscriber.customerName,
-        customerEmail: mockSubscriber.customerEmail,
-        customerPhone: mockSubscriber.customerPhone,
-        deliveryAddress: mockSubscriber.deliveryAddress,
-        deliveryInstructions: mockSubscriber.deliveryInstructions || '',
-        deliveryDay: mockSubscriber.deliveryDay,
-        deliveryTime: mockSubscriber.deliveryTime || '',
-        paymentMethod: mockSubscriber.paymentMethod,
-        notes: mockSubscriber.customerNotes || ''
-      });
+      const response = await api.get(`/admin/subscriptions/${id}`);
+      setSubscriber(response.data);
+      setAdminNotes(response.data.admin_notes || '');
     } catch (error) {
-      console.error('Error fetching subscriber details:', error);
+      console.error('Error fetching subscriber:', error);
       toast({
         title: 'Error',
         description: 'Failed to load subscriber details',
@@ -378,10 +254,70 @@ const SubscriberDetails = () => {
     }
   };
 
+  const fetchDeliveries = async () => {
+    try {
+      const response = await api.get(`/admin/subscriptions/${id}/deliveries`);
+      setDeliveries(response.data);
+    } catch (error) {
+      console.error('Error fetching deliveries:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load deliveries',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const fetchInvoices = async () => {
+    try {
+      const response = await api.get(`/admin/subscriptions/${id}/invoices`);
+      setInvoices(response.data);
+    } catch (error) {
+      console.error('Error fetching invoices:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to load invoices',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const fetchNotes = async () => {
+    try {
+      const response = await api.get(`/admin/subscriptions/${id}/notes`);
+      setNotes(response.data);
+    } catch (error) {
+      console.error('Error fetching notes:', error);
+    }
+  };
+
+  const fetchReminders = async () => {
+    try {
+      // This would be a separate endpoint or we can filter from all reminders
+      // For now, we'll just use the reminders from the subscription_reminders table
+      // You might need to create an endpoint for this
+      const response = await api.get(`/admin/subscriptions/reminders?subscription_id=${id}`);
+      setReminders(response.data.reminders);
+    } catch (error) {
+      console.error('Error fetching reminders:', error);
+    }
+  };
+
+  // Action handlers
   const handleUpdateStatus = async (newStatus: Subscriber['status']) => {
     if (!subscriber) return;
     
     try {
+      if (newStatus === 'active' && subscriber.status === 'paused') {
+        await api.post(`/subscriptions/${id}/resume`);
+      } else if (newStatus === 'paused') {
+        setShowPauseDialog(true);
+        return;
+      } else if (newStatus === 'cancelled') {
+        setShowCancelDialog(true);
+        return;
+      }
+      
       setSubscriber({ ...subscriber, status: newStatus });
       toast({
         title: 'Status Updated',
@@ -396,23 +332,45 @@ const SubscriberDetails = () => {
     }
   };
 
+  const handleLogCall = async () => {
+    if (!subscriber) return;
+    
+    try {
+      await api.patch(`/admin/subscriptions/${id}/call-status`, {
+        call_status: callForm.call_status,
+        call_notes: callForm.notes,
+        next_call_date: callForm.next_call_date || null
+      });
+      
+      // Refresh subscriber data
+      fetchSubscriberDetails();
+      
+      setShowCallDialog(false);
+      setCallForm({ call_status: 'called', notes: '', next_call_date: '' });
+      
+      toast({
+        title: 'Call Logged',
+        description: 'Call record saved successfully',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to log call',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const handleAddNote = async () => {
     if (!subscriber || !noteForm.content.trim()) return;
     
     try {
-      const newNote = {
-        id: Date.now().toString(),
+      const response = await api.post(`/admin/subscriptions/${id}/notes`, {
         content: noteForm.content,
-        type: noteForm.type,
-        createdBy: 'Admin User',
-        createdAt: new Date().toISOString()
-      };
-      
-      setSubscriber({
-        ...subscriber,
-        notes: [newNote, ...subscriber.notes]
+        type: noteForm.type
       });
       
+      setNotes([response.data, ...notes]);
       setShowNoteDialog(false);
       setNoteForm({ content: '', type: 'general' });
       
@@ -429,38 +387,19 @@ const SubscriberDetails = () => {
     }
   };
 
-  const handleLogCall = async () => {
-    if (!subscriber) return;
-    
+  const handleDeleteNote = async (noteId: string) => {
     try {
-      const newNote = {
-        id: Date.now().toString(),
-        content: `Call logged: ${callForm.notes}`,
-        type: 'call',
-        createdBy: 'Admin User',
-        createdAt: new Date().toISOString()
-      };
-      
-      setSubscriber({
-        ...subscriber,
-        callStatus: callForm.status as any,
-        callNotes: callForm.notes,
-        lastCallDate: new Date().toISOString(),
-        nextCallDate: callForm.callLaterDate || undefined,
-        notes: [newNote, ...subscriber.notes]
-      });
-      
-      setShowCallDialog(false);
-      setCallForm({ status: 'pending', notes: '', callLaterDate: '' });
+      await api.delete(`/admin/subscriptions/${id}/notes/${noteId}`);
+      setNotes(notes.filter(n => n.id !== noteId));
       
       toast({
-        title: 'Call Logged',
-        description: 'Call record saved successfully',
+        title: 'Note Deleted',
+        description: 'Note has been deleted',
       });
     } catch (error) {
       toast({
         title: 'Error',
-        description: 'Failed to log call',
+        description: 'Failed to delete note',
         variant: 'destructive',
       });
     }
@@ -470,31 +409,25 @@ const SubscriberDetails = () => {
     if (!subscriber) return;
     
     try {
-      const newNote = {
-        id: Date.now().toString(),
-        content: `${reminderForm.type} reminder sent: ${reminderForm.message}`,
-        type: 'reminder',
-        createdBy: 'Admin User',
-        createdAt: new Date().toISOString()
-      };
-      
-      setSubscriber({
-        ...subscriber,
-        reminderSent: true,
-        lastReminderDate: new Date().toISOString(),
-        notes: [newNote, ...subscriber.notes]
+      await api.post('/admin/subscriptions/reminders', {
+        subscription_id: id,
+        reminder_type: reminderForm.reminder_type,
+        message: reminderForm.message,
+        scheduled_date: reminderForm.scheduled_date
       });
       
+      fetchReminders();
       setShowReminderDialog(false);
+      setReminderForm({ reminder_type: 'payment', message: '', scheduled_date: '' });
       
       toast({
-        title: 'Reminder Sent',
-        description: `${reminderForm.type} reminder sent successfully`,
+        title: 'Reminder Created',
+        description: 'Reminder has been scheduled',
       });
     } catch (error) {
       toast({
         title: 'Error',
-        description: 'Failed to send reminder',
+        description: 'Failed to create reminder',
         variant: 'destructive',
       });
     }
@@ -504,18 +437,22 @@ const SubscriberDetails = () => {
     if (!subscriber) return;
     
     try {
+      await api.post(`/subscriptions/${id}/pause`, {
+        untilDate: pauseForm.until_date
+      });
+      
       setSubscriber({
         ...subscriber,
         status: 'paused',
-        pauseUntil: pauseForm.untilDate
+        pause_until: pauseForm.until_date
       });
       
       setShowPauseDialog(false);
-      setPauseForm({ untilDate: '', reason: '' });
+      setPauseForm({ until_date: '', reason: '' });
       
       toast({
         title: 'Subscription Paused',
-        description: `Paused until ${format(new Date(pauseForm.untilDate), 'PPP')}`,
+        description: `Paused until ${format(new Date(pauseForm.until_date), 'PPP')}`,
       });
     } catch (error) {
       toast({
@@ -530,13 +467,19 @@ const SubscriberDetails = () => {
     if (!subscriber) return;
     
     try {
+      await api.post(`/subscriptions/${id}/cancel`, {
+        reason: pauseForm.reason
+      });
+      
       setSubscriber({
         ...subscriber,
         status: 'cancelled',
-        cancelledAt: new Date().toISOString()
+        cancelled_at: new Date().toISOString(),
+        cancellation_reason: pauseForm.reason
       });
       
       setShowCancelDialog(false);
+      setPauseForm({ until_date: '', reason: '' });
       
       toast({
         title: 'Subscription Cancelled',
@@ -551,39 +494,111 @@ const SubscriberDetails = () => {
     }
   };
 
-  const handleSaveEdit = async () => {
+  const handleAddDelivery = async () => {
     if (!subscriber) return;
     
     try {
-      setSubscriber({
-        ...subscriber,
-        customerName: editForm.customerName,
-        customerEmail: editForm.customerEmail,
-        customerPhone: editForm.customerPhone,
-        deliveryAddress: editForm.deliveryAddress,
-        deliveryInstructions: editForm.deliveryInstructions,
-        deliveryDay: editForm.deliveryDay,
-        deliveryTime: editForm.deliveryTime,
-        paymentMethod: editForm.paymentMethod,
-        customerNotes: editForm.notes
+      await api.post(`/admin/subscriptions/${id}/deliveries`, deliveryForm);
+      
+      fetchDeliveries();
+      setShowAddDeliveryDialog(false);
+      setDeliveryForm({
+        delivery_date: '',
+        delivery_time: '',
+        status: 'scheduled',
+        tracking_number: '',
+        notes: ''
       });
       
-      setIsEditing(false);
-      setShowEditDialog(false);
-      
       toast({
-        title: 'Changes Saved',
-        description: 'Subscriber information updated successfully',
+        title: 'Delivery Added',
+        description: 'New delivery has been scheduled',
       });
     } catch (error) {
       toast({
         title: 'Error',
-        description: 'Failed to save changes',
+        description: 'Failed to add delivery',
         variant: 'destructive',
       });
     }
   };
 
+  const handleGenerateInvoice = async () => {
+    if (!subscriber) return;
+    
+    try {
+      await api.post(`/admin/subscriptions/${id}/invoices`, {
+        amount: parseFloat(invoiceForm.amount),
+        due_date: invoiceForm.due_date,
+        notes: invoiceForm.notes
+      });
+      
+      fetchInvoices();
+      setShowGenerateInvoiceDialog(false);
+      setInvoiceForm({ amount: '', due_date: '', notes: '' });
+      
+      toast({
+        title: 'Invoice Generated',
+        description: 'New invoice has been created',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to generate invoice',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleMarkInvoicePaid = async (invoiceId: string) => {
+    try {
+      await api.patch(`/admin/subscriptions/${id}/invoices/${invoiceId}/paid`, {});
+      
+      // Update invoice in state
+      setInvoices(invoices.map(inv => 
+        inv.id === invoiceId 
+          ? { ...inv, status: 'paid', paid_date: new Date().toISOString() }
+          : inv
+      ));
+      
+      toast({
+        title: 'Invoice Marked Paid',
+        description: 'Invoice has been marked as paid',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to mark invoice as paid',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleUpdateAdminNotes = async () => {
+    if (!subscriber) return;
+    
+    try {
+      await api.patch(`/admin/subscriptions/${id}/admin-notes`, {
+        admin_notes: adminNotes
+      });
+      
+      setSubscriber({ ...subscriber, admin_notes: adminNotes });
+      setShowEditAdminNotes(false);
+      
+      toast({
+        title: 'Notes Updated',
+        description: 'Admin notes have been updated',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update notes',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Helper functions
   const getInitials = (name: string) => {
     return name
       .split(' ')
@@ -658,16 +673,16 @@ const SubscriberDetails = () => {
           </Button>
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-3xl font-display font-bold">{subscriber.customerName}</h1>
+              <h1 className="text-3xl font-display font-bold">{subscriber.customer_name}</h1>
               <Badge className={`${getStatusColor(subscriber.status)} text-white`}>
                 {subscriber.status}
               </Badge>
-              <Badge className={`${getCallStatusColor(subscriber.callStatus)} text-white`}>
-                {subscriber.callStatus.replace('_', ' ')}
+              <Badge className={`${getCallStatusColor(subscriber.call_status)} text-white`}>
+                {subscriber.call_status?.replace('_', ' ')}
               </Badge>
             </div>
             <p className="text-muted-foreground mt-1">
-              {subscriber.subscriptionNumber} • Subscribed {format(new Date(subscriber.startDate), 'MMMM d, yyyy')}
+              {subscriber.subscription_number} • Subscribed {format(new Date(subscriber.start_date), 'MMMM d, yyyy')}
             </p>
           </div>
         </div>
@@ -677,13 +692,13 @@ const SubscriberDetails = () => {
             <Phone className="w-4 h-4 mr-2" />
             Log Call
           </Button>
-          <Button variant="outline" onClick={() => setShowNoteDialog(true)}>
-            <MessageSquare className="w-4 h-4 mr-2" />
-            Add Note
-          </Button>
           <Button variant="outline" onClick={() => setShowReminderDialog(true)}>
             <Bell className="w-4 h-4 mr-2" />
             Send Reminder
+          </Button>
+          <Button variant="outline" onClick={() => setShowNoteDialog(true)}>
+            <MessageSquare className="w-4 h-4 mr-2" />
+            Add Note
           </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -693,15 +708,28 @@ const SubscriberDetails = () => {
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
               <DropdownMenuLabel>Actions</DropdownMenuLabel>
-              <DropdownMenuItem onClick={() => setShowEditDialog(true)}>
-                <Edit className="w-4 h-4 mr-2" />
-                Edit Details
+              <DropdownMenuItem onClick={() => window.open(`mailto:${subscriber.customer_email}`)}>
+                <Mail className="w-4 h-4 mr-2" />
+                Send Email
               </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => window.open(`tel:${subscriber.customer_phone}`)}>
+                <Phone className="w-4 h-4 mr-2" />
+                Call Customer
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowAddDeliveryDialog(true)}>
+                <Truck className="w-4 h-4 mr-2" />
+                Schedule Delivery
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setShowGenerateInvoiceDialog(true)}>
+                <FileText className="w-4 h-4 mr-2" />
+                Generate Invoice
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem onClick={() => window.print()}>
                 <Printer className="w-4 h-4 mr-2" />
                 Print Profile
               </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => {/* Export */}}>
+              <DropdownMenuItem>
                 <Download className="w-4 h-4 mr-2" />
                 Export Data
               </DropdownMenuItem>
@@ -741,8 +769,8 @@ const SubscriberDetails = () => {
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Plan</p>
-              <p className="font-medium">{subscriber.planName}</p>
-              <p className="text-xs text-muted-foreground">MK {subscriber.planPrice.toLocaleString()}/{subscriber.planInterval}</p>
+              <p className="font-medium">{subscriber.plan_name}</p>
+              <p className="text-xs text-muted-foreground">MK {subscriber.plan_price.toLocaleString()}/{subscriber.plan_interval}</p>
             </div>
           </CardContent>
         </Card>
@@ -754,8 +782,8 @@ const SubscriberDetails = () => {
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Next Delivery</p>
-              <p className="font-medium">{format(new Date(subscriber.nextDeliveryDate), 'MMM d, yyyy')}</p>
-              <p className="text-xs text-muted-foreground capitalize">{subscriber.deliveryDay}</p>
+              <p className="font-medium">{format(new Date(subscriber.next_delivery_date), 'MMM d, yyyy')}</p>
+              <p className="text-xs text-muted-foreground capitalize">{subscriber.delivery_day}</p>
             </div>
           </CardContent>
         </Card>
@@ -767,8 +795,8 @@ const SubscriberDetails = () => {
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Total Paid</p>
-              <p className="font-medium">MK {subscriber.totalPaid.toLocaleString()}</p>
-              <p className="text-xs text-muted-foreground">{subscriber.totalDeliveries} deliveries</p>
+              <p className="font-medium">MK {subscriber.total_paid.toLocaleString()}</p>
+              <p className="text-xs text-muted-foreground">Lifetime value</p>
             </div>
           </CardContent>
         </Card>
@@ -776,13 +804,13 @@ const SubscriberDetails = () => {
         <Card>
           <CardContent className="p-4 flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-orange-100 flex items-center justify-center">
-              <Clock className="w-5 h-5 text-orange-600" />
+              <Calendar className="w-5 h-5 text-orange-600" />
             </div>
             <div>
               <p className="text-sm text-muted-foreground">Member Since</p>
-              <p className="font-medium">{format(new Date(subscriber.createdAt), 'MMM d, yyyy')}</p>
+              <p className="font-medium">{format(new Date(subscriber.created_at), 'MMM d, yyyy')}</p>
               <p className="text-xs text-muted-foreground">
-                {formatDistance(new Date(subscriber.createdAt), new Date(), { addSuffix: true })}
+                {formatDistance(new Date(subscriber.created_at), new Date(), { addSuffix: true })}
               </p>
             </div>
           </CardContent>
@@ -795,8 +823,8 @@ const SubscriberDetails = () => {
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="deliveries">Deliveries</TabsTrigger>
           <TabsTrigger value="invoices">Invoices</TabsTrigger>
-          <TabsTrigger value="notes">Notes & History</TabsTrigger>
-          <TabsTrigger value="settings">Settings</TabsTrigger>
+          <TabsTrigger value="notes">Notes</TabsTrigger>
+          <TabsTrigger value="history">History</TabsTrigger>
         </TabsList>
 
         {/* Overview Tab */}
@@ -804,33 +832,37 @@ const SubscriberDetails = () => {
           <div className="grid grid-cols-3 gap-4">
             {/* Customer Information */}
             <Card className="col-span-2">
-              <CardHeader>
+              <CardHeader className="flex flex-row items-center justify-between">
                 <CardTitle>Customer Information</CardTitle>
+                <Button variant="ghost" size="sm" onClick={() => navigate(`/admin/customers/${subscriber.id}`)}>
+                  <ExternalLink className="w-4 h-4 mr-2" />
+                  View Full Profile
+                </Button>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex items-start gap-4">
                   <Avatar className="h-16 w-16">
                     <AvatarFallback className="bg-gradient-to-br from-orange-500 to-red-500 text-white text-lg">
-                      {getInitials(subscriber.customerName)}
+                      {getInitials(subscriber.customer_name)}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1">
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <p className="text-sm text-muted-foreground">Full Name</p>
-                        <p className="font-medium">{subscriber.customerName}</p>
+                        <p className="font-medium">{subscriber.customer_name}</p>
                       </div>
                       <div>
                         <p className="text-sm text-muted-foreground">Email</p>
-                        <p className="font-medium">{subscriber.customerEmail}</p>
+                        <p className="font-medium">{subscriber.customer_email}</p>
                       </div>
                       <div>
                         <p className="text-sm text-muted-foreground">Phone</p>
-                        <p className="font-medium">{subscriber.customerPhone}</p>
+                        <p className="font-medium">{subscriber.customer_phone}</p>
                       </div>
                       <div>
                         <p className="text-sm text-muted-foreground">Payment Method</p>
-                        <p className="font-medium capitalize">{subscriber.paymentMethod.replace('_', ' ')}</p>
+                        <p className="font-medium capitalize">{subscriber.payment_method?.replace('_', ' ')}</p>
                       </div>
                     </div>
                   </div>
@@ -840,26 +872,31 @@ const SubscriberDetails = () => {
 
                 <div>
                   <p className="text-sm text-muted-foreground mb-2">Delivery Address</p>
-                  <p className="font-medium">{subscriber.deliveryAddress}</p>
-                  {subscriber.deliveryInstructions && (
+                  <p className="font-medium">{subscriber.delivery_address}</p>
+                  {subscriber.delivery_instructions && (
                     <p className="text-sm text-muted-foreground mt-2">
-                      <span className="font-medium">Instructions:</span> {subscriber.deliveryInstructions}
+                      <span className="font-medium">Instructions:</span> {subscriber.delivery_instructions}
                     </p>
                   )}
                 </div>
 
-                {subscriber.customerNotes && (
-                  <>
-                    <Separator />
-                    <div>
-                      <p className="text-sm text-muted-foreground mb-2">Notes</p>
-                      <p className="text-sm">{subscriber.customerNotes}</p>
-                    </div>
-                  </>
-                )}
+                <div className="flex items-center gap-2">
+                  <p className="text-sm text-muted-foreground">Delivery Day:</p>
+                  <Badge variant="outline" className="capitalize">
+                    {subscriber.delivery_day}
+                  </Badge>
+                  {subscriber.delivery_time && (
+                    <>
+                      <p className="text-sm text-muted-foreground ml-2">Time:</p>
+                      <Badge variant="outline">
+                        {subscriber.delivery_time}
+                      </Badge>
+                    </>
+                  )}
+                </div>
 
                 <div className="flex flex-wrap gap-2">
-                  {subscriber.tags.map((tag, index) => (
+                  {subscriber.tags?.map((tag, index) => (
                     <Badge key={index} variant="secondary" className="text-xs">
                       {tag}
                     </Badge>
@@ -868,119 +905,90 @@ const SubscriberDetails = () => {
               </CardContent>
             </Card>
 
-            {/* Plan Details */}
+            {/* Subscription Info Card */}
             <Card>
               <CardHeader>
-                <CardTitle>Plan Details</CardTitle>
+                <CardTitle>Subscription Details</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <p className="text-lg font-bold">{subscriber.planName}</p>
-                  <p className="text-sm text-muted-foreground">{subscriber.planDescription}</p>
+                  <p className="text-lg font-bold">{subscriber.plan_name}</p>
+                  <p className="text-sm text-muted-foreground">{subscriber.plan_description}</p>
                 </div>
 
                 <div className="space-y-2">
                   <div className="flex justify-between">
                     <span className="text-sm text-muted-foreground">Price</span>
-                    <span className="font-medium">MK {subscriber.planPrice.toLocaleString()}</span>
+                    <span className="font-medium">MK {subscriber.plan_price.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-sm text-muted-foreground">Interval</span>
-                    <span className="font-medium capitalize">{subscriber.planInterval}</span>
+                    <span className="font-medium capitalize">{subscriber.plan_interval}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-sm text-muted-foreground">Delivery Day</span>
-                    <span className="font-medium capitalize">{subscriber.deliveryDay}</span>
+                    <span className="text-sm text-muted-foreground">Start Date</span>
+                    <span className="font-medium">{format(new Date(subscriber.start_date), 'PPP')}</span>
                   </div>
-                  {subscriber.deliveryTime && (
+                  <div className="flex justify-between">
+                    <span className="text-sm text-muted-foreground">Status</span>
+                    <Badge className={`${getStatusColor(subscriber.status)} text-white`}>
+                      {subscriber.status}
+                    </Badge>
+                  </div>
+                  {subscriber.status === 'paused' && subscriber.pause_until && (
                     <div className="flex justify-between">
-                      <span className="text-sm text-muted-foreground">Delivery Time</span>
-                      <span className="font-medium">{subscriber.deliveryTime}</span>
+                      <span className="text-sm text-muted-foreground">Paused Until</span>
+                      <span className="font-medium">{format(new Date(subscriber.pause_until), 'PPP')}</span>
+                    </div>
+                  )}
+                  {subscriber.status === 'cancelled' && subscriber.cancellation_reason && (
+                    <div>
+                      <p className="text-sm text-muted-foreground">Cancellation Reason</p>
+                      <p className="text-sm mt-1 p-2 bg-red-50 dark:bg-red-950/30 rounded">
+                        {subscriber.cancellation_reason}
+                      </p>
                     </div>
                   )}
                 </div>
 
-                <Separator />
-
-                <div>
-                  <p className="text-sm text-muted-foreground mb-2">Features</p>
-                  <ul className="space-y-2">
-                    {subscriber.planFeatures.map((feature, index) => (
-                      <li key={index} className="flex items-start gap-2 text-sm">
-                        <CheckCircle className="w-4 h-4 text-green-500 shrink-0 mt-0.5" />
-                        <span>{feature}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                {subscriber.plan_features && subscriber.plan_features.length > 0 && (
+                  <>
+                    <Separator />
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-2">Plan Features</p>
+                      <ul className="space-y-2">
+                        {subscriber.plan_features.map((feature, index) => (
+                          <li key={index} className="flex items-start gap-2 text-sm">
+                            <CheckCircle className="w-4 h-4 text-green-500 shrink-0 mt-0.5" />
+                            <span>{feature}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
           </div>
 
-          {/* Delivery Schedule */}
+          {/* Admin Notes Card */}
           <Card>
-            <CardHeader>
-              <CardTitle>Upcoming Deliveries</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Delivery #</TableHead>
-                    <TableHead>Scheduled Date</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Rider</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Payment</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {deliveries.filter(d => d.status !== 'delivered').map((delivery) => (
-                    <TableRow key={delivery.id}>
-                      <TableCell className="font-mono text-sm">{delivery.deliveryNumber}</TableCell>
-                      <TableCell>{format(new Date(delivery.scheduledDate), 'PPP')}</TableCell>
-                      <TableCell>
-                        <Badge className={`${getDeliveryStatusColor(delivery.status)} text-white`}>
-                          {delivery.status.replace('_', ' ')}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{delivery.riderName || 'Not assigned'}</TableCell>
-                      <TableCell>MK {delivery.amount.toLocaleString()}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={
-                          delivery.paymentStatus === 'paid' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                        }>
-                          {delivery.paymentStatus}
-                        </Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
-
-          {/* Recent Activity */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Activity</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {subscriber.notes.slice(0, 3).map((note) => (
-                  <div key={note.id} className="flex gap-4">
-                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                      <MessageSquare className="w-4 h-4 text-primary" />
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm">{note.content}</p>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {note.createdBy} • {format(new Date(note.createdAt), 'PPP p')}
-                      </p>
-                    </div>
-                  </div>
-                ))}
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Admin Notes</CardTitle>
+                <CardDescription>Internal notes about this subscriber</CardDescription>
               </div>
+              <Button variant="outline" size="sm" onClick={() => setShowEditAdminNotes(true)}>
+                <Edit className="w-4 h-4 mr-2" />
+                Edit
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {adminNotes ? (
+                <p className="whitespace-pre-wrap">{adminNotes}</p>
+              ) : (
+                <p className="text-muted-foreground italic">No admin notes added yet.</p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -988,54 +996,57 @@ const SubscriberDetails = () => {
         {/* Deliveries Tab */}
         <TabsContent value="deliveries">
           <Card>
-            <CardHeader>
-              <CardTitle>Delivery History</CardTitle>
-              <CardDescription>All deliveries for this subscription</CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Delivery History</CardTitle>
+                <CardDescription>All deliveries for this subscription</CardDescription>
+              </div>
+              <Button onClick={() => setShowAddDeliveryDialog(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Add Delivery
+              </Button>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Delivery #</TableHead>
-                    <TableHead>Scheduled Date</TableHead>
-                    <TableHead>Actual Delivery</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Rider</TableHead>
-                    <TableHead>Tracking</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Payment</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {deliveries.map((delivery) => (
-                    <TableRow key={delivery.id}>
-                      <TableCell className="font-mono text-sm">{delivery.deliveryNumber}</TableCell>
-                      <TableCell>{format(new Date(delivery.scheduledDate), 'PPP')}</TableCell>
-                      <TableCell>
-                        {delivery.actualDeliveryDate 
-                          ? format(new Date(delivery.actualDeliveryDate), 'PPP p')
-                          : '-'
-                        }
-                      </TableCell>
-                      <TableCell>
-                        <Badge className={`${getDeliveryStatusColor(delivery.status)} text-white`}>
-                          {delivery.status.replace('_', ' ')}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>{delivery.riderName || '-'}</TableCell>
-                      <TableCell>{delivery.trackingNumber || '-'}</TableCell>
-                      <TableCell>MK {delivery.amount.toLocaleString()}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={
-                          delivery.paymentStatus === 'paid' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'
-                        }>
-                          {delivery.paymentStatus}
-                        </Badge>
-                      </TableCell>
+              {deliveries.length === 0 ? (
+                <div className="text-center py-8">
+                  <Truck className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
+                  <p className="text-lg font-medium">No deliveries yet</p>
+                  <p className="text-sm text-muted-foreground">
+                    Schedule the first delivery for this subscriber
+                  </p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Delivery #</TableHead>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Time</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Rider</TableHead>
+                      <TableHead>Tracking</TableHead>
+                      <TableHead>Notes</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {deliveries.map((delivery) => (
+                      <TableRow key={delivery.id}>
+                        <TableCell className="font-mono text-sm">{delivery.delivery_number}</TableCell>
+                        <TableCell>{format(new Date(delivery.delivery_date), 'PPP')}</TableCell>
+                        <TableCell>{delivery.delivery_time || '-'}</TableCell>
+                        <TableCell>
+                          <Badge className={`${getDeliveryStatusColor(delivery.status)} text-white`}>
+                            {delivery.status.replace('_', ' ')}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{delivery.rider_name || '-'}</TableCell>
+                        <TableCell>{delivery.tracking_number || '-'}</TableCell>
+                        <TableCell className="max-w-[200px] truncate">{delivery.notes || '-'}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1043,47 +1054,68 @@ const SubscriberDetails = () => {
         {/* Invoices Tab */}
         <TabsContent value="invoices">
           <Card>
-            <CardHeader>
-              <CardTitle>Invoices</CardTitle>
-              <CardDescription>Payment history and invoices</CardDescription>
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle>Invoices</CardTitle>
+                <CardDescription>Payment history and invoices</CardDescription>
+              </div>
+              <Button onClick={() => setShowGenerateInvoiceDialog(true)}>
+                <Plus className="w-4 h-4 mr-2" />
+                Generate Invoice
+              </Button>
             </CardHeader>
             <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Invoice #</TableHead>
-                    <TableHead>Issue Date</TableHead>
-                    <TableHead>Due Date</TableHead>
-                    <TableHead>Paid Date</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {invoices.map((invoice) => (
-                    <TableRow key={invoice.id}>
-                      <TableCell className="font-mono text-sm">{invoice.invoiceNumber}</TableCell>
-                      <TableCell>{format(new Date(invoice.issueDate), 'PPP')}</TableCell>
-                      <TableCell>{format(new Date(invoice.dueDate), 'PPP')}</TableCell>
-                      <TableCell>
-                        {invoice.paidDate ? format(new Date(invoice.paidDate), 'PPP') : '-'}
-                      </TableCell>
-                      <TableCell>MK {invoice.amount.toLocaleString()}</TableCell>
-                      <TableCell>
-                        <Badge className={`${getInvoiceStatusColor(invoice.status)} text-white`}>
-                          {invoice.status}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="ghost" size="icon">
-                          <Download className="w-4 h-4" />
-                        </Button>
-                      </TableCell>
+              {invoices.length === 0 ? (
+                <div className="text-center py-8">
+                  <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
+                  <p className="text-lg font-medium">No invoices yet</p>
+                  <p className="text-sm text-muted-foreground">
+                    Generate the first invoice for this subscriber
+                  </p>
+                </div>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Invoice #</TableHead>
+                      <TableHead>Issue Date</TableHead>
+                      <TableHead>Due Date</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead>Paid</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {invoices.map((invoice) => (
+                      <TableRow key={invoice.id}>
+                        <TableCell className="font-mono text-sm">{invoice.invoice_number}</TableCell>
+                        <TableCell>{format(new Date(invoice.issue_date), 'PPP')}</TableCell>
+                        <TableCell>{format(new Date(invoice.due_date), 'PPP')}</TableCell>
+                        <TableCell>MK {invoice.total.toLocaleString()}</TableCell>
+                        <TableCell>MK {invoice.amount_paid.toLocaleString()}</TableCell>
+                        <TableCell>
+                          <Badge className={`${getInvoiceStatusColor(invoice.status)} text-white`}>
+                            {invoice.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {invoice.status !== 'paid' && (
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => handleMarkInvoicePaid(invoice.id)}
+                            >
+                              <CheckCircle className="w-4 h-4 mr-2" />
+                              Mark Paid
+                            </Button>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -1093,8 +1125,8 @@ const SubscriberDetails = () => {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between">
               <div>
-                <CardTitle>Notes & History</CardTitle>
-                <CardDescription>All interactions and notes</CardDescription>
+                <CardTitle>Notes & Interactions</CardTitle>
+                <CardDescription>All notes and call logs</CardDescription>
               </div>
               <Button onClick={() => setShowNoteDialog(true)}>
                 <Plus className="w-4 h-4 mr-2" />
@@ -1102,115 +1134,133 @@ const SubscriberDetails = () => {
               </Button>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                {subscriber.notes.map((note) => (
-                  <div key={note.id} className="flex gap-4 p-4 border rounded-lg">
-                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                      {note.type === 'call' && <Phone className="w-4 h-4 text-primary" />}
-                      {note.type === 'delivery' && <Truck className="w-4 h-4 text-primary" />}
-                      {note.type === 'payment' && <DollarSign className="w-4 h-4 text-primary" />}
-                      {note.type === 'reminder' && <Bell className="w-4 h-4 text-primary" />}
-                      {note.type === 'general' && <MessageSquare className="w-4 h-4 text-primary" />}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Badge variant="outline" className="text-xs capitalize">
-                          {note.type}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">
-                          {note.createdBy}
-                        </span>
+              {notes.length === 0 ? (
+                <div className="text-center py-8">
+                  <MessageSquare className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
+                  <p className="text-lg font-medium">No notes yet</p>
+                  <p className="text-sm text-muted-foreground">
+                    Add your first note about this subscriber
+                  </p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {notes.map((note) => (
+                    <div key={note.id} className="flex gap-4 p-4 border rounded-lg">
+                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                        {note.type === 'call' && <Phone className="w-4 h-4 text-primary" />}
+                        {note.type === 'delivery' && <Truck className="w-4 h-4 text-primary" />}
+                        {note.type === 'payment' && <DollarSign className="w-4 h-4 text-primary" />}
+                        {note.type === 'reminder' && <Bell className="w-4 h-4 text-primary" />}
+                        {note.type === 'general' && <MessageSquare className="w-4 h-4 text-primary" />}
                       </div>
-                      <p className="text-sm">{note.content}</p>
-                      <p className="text-xs text-muted-foreground mt-2">
-                        {format(new Date(note.createdAt), 'PPP p')}
-                      </p>
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="text-xs capitalize">
+                              {note.type}
+                            </Badge>
+                            <span className="text-xs text-muted-foreground">
+                              {note.created_by}
+                            </span>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={() => handleDeleteNote(note.id)}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
+                        <p className="text-sm whitespace-pre-wrap">{note.content}</p>
+                        <p className="text-xs text-muted-foreground mt-2">
+                          {format(new Date(note.created_at), 'PPP p')}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
 
-        {/* Settings Tab */}
-        <TabsContent value="settings">
+        {/* History Tab */}
+        <TabsContent value="history">
           <div className="grid grid-cols-2 gap-4">
             <Card>
               <CardHeader>
-                <CardTitle>Reminder Preferences</CardTitle>
-                <CardDescription>How this customer wants to be notified</CardDescription>
+                <CardTitle>Call History</CardTitle>
+                <CardDescription>Recent call activity</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">Email Notifications</p>
-                    <p className="text-sm text-muted-foreground">Send reminders via email</p>
+              <CardContent>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">Current Status:</span>
+                    <Badge className={`${getCallStatusColor(subscriber.call_status)} text-white`}>
+                      {subscriber.call_status?.replace('_', ' ')}
+                    </Badge>
                   </div>
-                  <Switch checked={subscriber.reminderPreferences.email} />
-                </div>
-                <Separator />
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">SMS Notifications</p>
-                    <p className="text-sm text-muted-foreground">Send reminders via SMS</p>
-                  </div>
-                  <Switch checked={subscriber.reminderPreferences.sms} />
-                </div>
-                <Separator />
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">Payment Reminders</p>
-                    <p className="text-sm text-muted-foreground">Remind before payment due</p>
-                  </div>
-                  <Switch checked={subscriber.reminderPreferences.payment} />
-                </div>
-                <Separator />
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">Delivery Reminders</p>
-                    <p className="text-sm text-muted-foreground">Remind before delivery</p>
-                  </div>
-                  <Switch checked={subscriber.reminderPreferences.delivery} />
+                  {subscriber.last_call_date && (
+                    <div className="flex justify-between">
+                      <span className="text-sm text-muted-foreground">Last Call:</span>
+                      <span className="font-medium">{format(new Date(subscriber.last_call_date), 'PPP p')}</span>
+                    </div>
+                  )}
+                  {subscriber.next_call_date && (
+                    <div className="flex justify-between">
+                      <span className="text-sm text-muted-foreground">Next Call:</span>
+                      <span className="font-medium">{format(new Date(subscriber.next_call_date), 'PPP p')}</span>
+                    </div>
+                  )}
+                  {subscriber.call_notes && (
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-2">Call Notes:</p>
+                      <p className="text-sm p-3 bg-muted/50 rounded-lg whitespace-pre-wrap">
+                        {subscriber.call_notes}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader>
-                <CardTitle>Subscription Actions</CardTitle>
-                <CardDescription>Manage this subscription</CardDescription>
+                <CardTitle>Reminder History</CardTitle>
+                <CardDescription>Scheduled and sent reminders</CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                <Button variant="outline" className="w-full justify-start" onClick={() => setShowEditDialog(true)}>
-                  <Edit className="w-4 h-4 mr-2" />
-                  Edit Customer Details
-                </Button>
-                <Button variant="outline" className="w-full justify-start" onClick={() => {/* Change Plan */}}>
-                  <Package className="w-4 h-4 mr-2" />
-                  Change Plan
-                </Button>
-                <Button variant="outline" className="w-full justify-start" onClick={() => {/* Update Payment */}}>
-                  <CreditCard className="w-4 h-4 mr-2" />
-                  Update Payment Method
-                </Button>
-                <Separator />
-                {subscriber.status === 'active' ? (
-                  <Button variant="outline" className="w-full justify-start text-blue-600" onClick={() => setShowPauseDialog(true)}>
-                    <PauseCircle className="w-4 h-4 mr-2" />
-                    Pause Subscription
-                  </Button>
-                ) : subscriber.status === 'paused' ? (
-                  <Button variant="outline" className="w-full justify-start text-green-600" onClick={() => handleUpdateStatus('active')}>
-                    <PlayCircle className="w-4 h-4 mr-2" />
-                    Resume Subscription
-                  </Button>
-                ) : null}
-                {subscriber.status !== 'cancelled' && (
-                  <Button variant="outline" className="w-full justify-start text-red-600" onClick={() => setShowCancelDialog(true)}>
-                    <Ban className="w-4 h-4 mr-2" />
-                    Cancel Subscription
-                  </Button>
+              <CardContent>
+                {reminders.length === 0 ? (
+                  <p className="text-muted-foreground italic">No reminders found</p>
+                ) : (
+                  <div className="space-y-4">
+                    {reminders.map((reminder) => (
+                      <div key={reminder.id} className="border-b pb-3 last:border-0">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <Badge variant="outline" className="text-xs capitalize mb-1">
+                              {reminder.reminder_type}
+                            </Badge>
+                            <p className="text-sm">{reminder.message}</p>
+                          </div>
+                          <Badge className={reminder.sent ? 'bg-green-500' : 'bg-yellow-500'}>
+                            {reminder.sent ? 'Sent' : 'Pending'}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-2 mt-2 text-xs text-muted-foreground">
+                          <Calendar className="w-3 h-3" />
+                          <span>Scheduled: {format(new Date(reminder.scheduled_date), 'PPP')}</span>
+                          {reminder.sent_at && (
+                            <>
+                              <span>•</span>
+                              <span>Sent: {format(new Date(reminder.sent_at), 'PPP p')}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </CardContent>
             </Card>
@@ -1224,7 +1274,7 @@ const SubscriberDetails = () => {
           <DialogHeader>
             <DialogTitle>Log Call</DialogTitle>
             <DialogDescription>
-              Record call with {subscriber.customerName}
+              Record call with {subscriber.customer_name}
             </DialogDescription>
           </DialogHeader>
           
@@ -1232,14 +1282,14 @@ const SubscriberDetails = () => {
             <div className="space-y-2">
               <Label>Call Status</Label>
               <Select 
-                value={callForm.status} 
-                onValueChange={(value) => setCallForm({...callForm, status: value})}
+                value={callForm.call_status} 
+                onValueChange={(value) => setCallForm({...callForm, call_status: value})}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="called">Called - No Answer</SelectItem>
+                  <SelectItem value="called">Called - Successful</SelectItem>
                   <SelectItem value="confirmed">Confirmed</SelectItem>
                   <SelectItem value="no_answer">No Answer</SelectItem>
                   <SelectItem value="call_later">Call Later</SelectItem>
@@ -1247,13 +1297,13 @@ const SubscriberDetails = () => {
               </Select>
             </div>
 
-            {callForm.status === 'call_later' && (
+            {callForm.call_status === 'call_later' && (
               <div className="space-y-2">
                 <Label>Call Later Date</Label>
                 <Input
                   type="datetime-local"
-                  value={callForm.callLaterDate}
-                  onChange={(e) => setCallForm({...callForm, callLaterDate: e.target.value})}
+                  value={callForm.next_call_date}
+                  onChange={(e) => setCallForm({...callForm, next_call_date: e.target.value})}
                 />
               </div>
             )}
@@ -1286,7 +1336,7 @@ const SubscriberDetails = () => {
           <DialogHeader>
             <DialogTitle>Add Note</DialogTitle>
             <DialogDescription>
-              Add a note for {subscriber.customerName}
+              Add a note for {subscriber.customer_name}
             </DialogDescription>
           </DialogHeader>
           
@@ -1306,7 +1356,6 @@ const SubscriberDetails = () => {
                   <SelectItem value="delivery">Delivery</SelectItem>
                   <SelectItem value="payment">Payment</SelectItem>
                   <SelectItem value="issue">Issue</SelectItem>
-                  <SelectItem value="resolution">Resolution</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1337,9 +1386,9 @@ const SubscriberDetails = () => {
       <Dialog open={showReminderDialog} onOpenChange={setShowReminderDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Send Reminder</DialogTitle>
+            <DialogTitle>Create Reminder</DialogTitle>
             <DialogDescription>
-              Send a reminder to {subscriber.customerName}
+              Schedule a reminder for {subscriber.customer_name}
             </DialogDescription>
           </DialogHeader>
           
@@ -1347,8 +1396,8 @@ const SubscriberDetails = () => {
             <div className="space-y-2">
               <Label>Reminder Type</Label>
               <Select 
-                value={reminderForm.type} 
-                onValueChange={(value) => setReminderForm({...reminderForm, type: value})}
+                value={reminderForm.reminder_type} 
+                onValueChange={(value) => setReminderForm({...reminderForm, reminder_type: value})}
               >
                 <SelectTrigger>
                   <SelectValue />
@@ -1357,8 +1406,21 @@ const SubscriberDetails = () => {
                   <SelectItem value="payment">Payment Reminder</SelectItem>
                   <SelectItem value="delivery">Delivery Reminder</SelectItem>
                   <SelectItem value="call">Call Reminder</SelectItem>
+                  <SelectItem value="renewal">Renewal Reminder</SelectItem>
+                  <SelectItem value="expiry">Expiry Reminder</SelectItem>
+                  <SelectItem value="custom">Custom</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Scheduled Date</Label>
+              <Input
+                type="date"
+                value={reminderForm.scheduled_date}
+                onChange={(e) => setReminderForm({...reminderForm, scheduled_date: e.target.value})}
+                min={new Date().toISOString().split('T')[0]}
+              />
             </div>
 
             <div className="space-y-2">
@@ -1370,32 +1432,6 @@ const SubscriberDetails = () => {
                 rows={4}
               />
             </div>
-
-            <div className="space-y-2">
-              <Label>Send Via</Label>
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <input 
-                    type="checkbox" 
-                    id="reminderEmail" 
-                    checked={reminderForm.sendEmail}
-                    onChange={(e) => setReminderForm({...reminderForm, sendEmail: e.target.checked})}
-                    className="rounded"
-                  />
-                  <Label htmlFor="reminderEmail">Email</Label>
-                </div>
-                <div className="flex items-center gap-2">
-                  <input 
-                    type="checkbox" 
-                    id="reminderSms" 
-                    checked={reminderForm.sendSms}
-                    onChange={(e) => setReminderForm({...reminderForm, sendSms: e.target.checked})}
-                    className="rounded"
-                  />
-                  <Label htmlFor="reminderSms">SMS</Label>
-                </div>
-              </div>
-            </div>
           </div>
 
           <DialogFooter>
@@ -1403,7 +1439,7 @@ const SubscriberDetails = () => {
               Cancel
             </Button>
             <Button onClick={handleSendReminder}>
-              Send Reminder
+              Create Reminder
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1415,7 +1451,7 @@ const SubscriberDetails = () => {
           <DialogHeader>
             <DialogTitle>Pause Subscription</DialogTitle>
             <DialogDescription>
-              Pause subscription for {subscriber.customerName}
+              Pause subscription for {subscriber.customer_name}
             </DialogDescription>
           </DialogHeader>
           
@@ -1424,8 +1460,8 @@ const SubscriberDetails = () => {
               <Label>Resume Date</Label>
               <Input
                 type="date"
-                value={pauseForm.untilDate}
-                onChange={(e) => setPauseForm({...pauseForm, untilDate: e.target.value})}
+                value={pauseForm.until_date}
+                onChange={(e) => setPauseForm({...pauseForm, until_date: e.target.value})}
                 min={new Date().toISOString().split('T')[0]}
               />
             </div>
@@ -1485,118 +1521,165 @@ const SubscriberDetails = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Dialog */}
-      <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-        <DialogContent className="max-w-2xl">
+      {/* Add Delivery Dialog */}
+      <Dialog open={showAddDeliveryDialog} onOpenChange={setShowAddDeliveryDialog}>
+        <DialogContent>
           <DialogHeader>
-            <DialogTitle>Edit Customer Details</DialogTitle>
+            <DialogTitle>Schedule Delivery</DialogTitle>
             <DialogDescription>
-              Update information for {subscriber.customerName}
+              Add a new delivery for {subscriber.customer_name}
             </DialogDescription>
           </DialogHeader>
           
-          <div className="grid grid-cols-2 gap-4 py-4">
-            <div className="space-y-2">
-              <Label>Full Name</Label>
-              <Input
-                value={editForm.customerName}
-                onChange={(e) => setEditForm({...editForm, customerName: e.target.value})}
-              />
+          <div className="space-y-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Delivery Date *</Label>
+                <Input
+                  type="date"
+                  value={deliveryForm.delivery_date}
+                  onChange={(e) => setDeliveryForm({...deliveryForm, delivery_date: e.target.value})}
+                  min={new Date().toISOString().split('T')[0]}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Delivery Time</Label>
+                <Input
+                  type="time"
+                  value={deliveryForm.delivery_time}
+                  onChange={(e) => setDeliveryForm({...deliveryForm, delivery_time: e.target.value})}
+                />
+              </div>
             </div>
+
             <div className="space-y-2">
-              <Label>Email</Label>
-              <Input
-                type="email"
-                value={editForm.customerEmail}
-                onChange={(e) => setEditForm({...editForm, customerEmail: e.target.value})}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Phone</Label>
-              <Input
-                value={editForm.customerPhone}
-                onChange={(e) => setEditForm({...editForm, customerPhone: e.target.value})}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Delivery Day</Label>
+              <Label>Status *</Label>
               <Select 
-                value={editForm.deliveryDay} 
-                onValueChange={(value) => setEditForm({...editForm, deliveryDay: value})}
+                value={deliveryForm.status} 
+                onValueChange={(value) => setDeliveryForm({...deliveryForm, status: value})}
               >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="monday">Monday</SelectItem>
-                  <SelectItem value="tuesday">Tuesday</SelectItem>
-                  <SelectItem value="wednesday">Wednesday</SelectItem>
-                  <SelectItem value="thursday">Thursday</SelectItem>
-                  <SelectItem value="friday">Friday</SelectItem>
-                  <SelectItem value="saturday">Saturday</SelectItem>
-                  <SelectItem value="sunday">Sunday</SelectItem>
+                  <SelectItem value="scheduled">Scheduled</SelectItem>
+                  <SelectItem value="processing">Processing</SelectItem>
+                  <SelectItem value="out_for_delivery">Out for Delivery</SelectItem>
+                  <SelectItem value="delivered">Delivered</SelectItem>
+                  <SelectItem value="failed">Failed</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
             <div className="space-y-2">
-              <Label>Delivery Time</Label>
+              <Label>Tracking Number</Label>
               <Input
-                value={editForm.deliveryTime}
-                onChange={(e) => setEditForm({...editForm, deliveryTime: e.target.value})}
-                placeholder="e.g., 10:00 - 12:00"
+                value={deliveryForm.tracking_number}
+                onChange={(e) => setDeliveryForm({...deliveryForm, tracking_number: e.target.value})}
+                placeholder="Optional"
               />
             </div>
+
             <div className="space-y-2">
-              <Label>Payment Method</Label>
-              <Select 
-                value={editForm.paymentMethod} 
-                onValueChange={(value) => setEditForm({...editForm, paymentMethod: value})}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="cash">Cash on Delivery</SelectItem>
-                  <SelectItem value="airtel_money">Airtel Money</SelectItem>
-                  <SelectItem value="tnm_mpamba">TNM Mpamba</SelectItem>
-                  <SelectItem value="card">Credit Card</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="col-span-2 space-y-2">
-              <Label>Delivery Address</Label>
-              <Textarea
-                value={editForm.deliveryAddress}
-                onChange={(e) => setEditForm({...editForm, deliveryAddress: e.target.value})}
-                rows={2}
-              />
-            </div>
-            <div className="col-span-2 space-y-2">
-              <Label>Delivery Instructions</Label>
-              <Textarea
-                value={editForm.deliveryInstructions}
-                onChange={(e) => setEditForm({...editForm, deliveryInstructions: e.target.value})}
-                placeholder="e.g., Leave with security guard..."
-                rows={2}
-              />
-            </div>
-            <div className="col-span-2 space-y-2">
               <Label>Notes</Label>
               <Textarea
-                value={editForm.notes}
-                onChange={(e) => setEditForm({...editForm, notes: e.target.value})}
-                placeholder="Internal notes about this customer..."
+                value={deliveryForm.notes}
+                onChange={(e) => setDeliveryForm({...deliveryForm, notes: e.target.value})}
+                placeholder="Additional notes..."
                 rows={3}
               />
             </div>
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowEditDialog(false)}>
+            <Button variant="outline" onClick={() => setShowAddDeliveryDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleSaveEdit}>
-              Save Changes
+            <Button onClick={handleAddDelivery}>
+              Schedule Delivery
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Generate Invoice Dialog */}
+      <Dialog open={showGenerateInvoiceDialog} onOpenChange={setShowGenerateInvoiceDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Generate Invoice</DialogTitle>
+            <DialogDescription>
+              Create a new invoice for {subscriber.customer_name}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Amount (MK) *</Label>
+              <Input
+                type="number"
+                value={invoiceForm.amount}
+                onChange={(e) => setInvoiceForm({...invoiceForm, amount: e.target.value})}
+                placeholder="15000"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Due Date *</Label>
+              <Input
+                type="date"
+                value={invoiceForm.due_date}
+                onChange={(e) => setInvoiceForm({...invoiceForm, due_date: e.target.value})}
+                min={new Date().toISOString().split('T')[0]}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Notes (Optional)</Label>
+              <Textarea
+                value={invoiceForm.notes}
+                onChange={(e) => setInvoiceForm({...invoiceForm, notes: e.target.value})}
+                placeholder="Additional invoice notes..."
+                rows={3}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowGenerateInvoiceDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleGenerateInvoice}>
+              Generate Invoice
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Admin Notes Dialog */}
+      <Dialog open={showEditAdminNotes} onOpenChange={setShowEditAdminNotes}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Admin Notes</DialogTitle>
+            <DialogDescription>
+              Update internal notes for {subscriber.customer_name}
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4 py-4">
+            <Textarea
+              value={adminNotes}
+              onChange={(e) => setAdminNotes(e.target.value)}
+              placeholder="Enter admin notes..."
+              rows={8}
+            />
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowEditAdminNotes(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleUpdateAdminNotes}>
+              Save Notes
             </Button>
           </DialogFooter>
         </DialogContent>

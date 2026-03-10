@@ -7,26 +7,31 @@ import {
   MoreHorizontal,
   Eye,
   Calendar,
-  Clock,
   CheckCircle,
   XCircle,
-  AlertCircle,
   Loader2,
   Download,
   RefreshCw,
-  Plus,
-  MapPin,
-  Phone,
   User,
   Package,
-  DollarSign,
   Printer,
-  Edit,
-  Copy,
-  Trash2,
-  ArrowUpDown,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  MapPin,
+  Phone,
+  Star,
+  Bike,
+  Car,
+  Users,
+  Award,
+  Mail,
+  IdCard,
+  FileText,
+  Edit,
+  Trash2,
+  Power,
+  PowerOff,
+  Zap
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -56,8 +61,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Progress } from '@/components/ui/progress';
-import { Separator } from '@/components/ui/separator';
 import {
   Dialog,
   DialogContent,
@@ -66,481 +69,477 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Progress } from '@/components/ui/progress';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { format, formatDistance, isToday, isTomorrow, isThisWeek } from 'date-fns';
+import { format, isToday, isTomorrow } from 'date-fns';
+import api from '@/services/api';
 
 interface Delivery {
   id: string;
-  deliveryNumber: string;
-  subscriptionId: string;
-  subscriptionNumber: string;
-  customerName: string;
-  customerPhone: string;
-  customerAddress: string;
-  planName: string;
-  planPrice: number;
-  scheduledDate: string;
-  scheduledTime?: string;
-  actualDeliveryDate?: string;
-  actualDeliveryTime?: string;
+  delivery_number: string;
+  subscription_id: string;
+  subscription_number: string;
+  customer_name: string;
+  customer_phone: string;
+  delivery_address: string;
+  delivery_instructions?: string;
+  plan_name: string;
+  plan_price: number;
+  delivery_date: string;
+  delivery_time?: string;
+  actual_delivery_time?: string;
   status: 'scheduled' | 'processing' | 'out_for_delivery' | 'delivered' | 'failed' | 'skipped' | 'rescheduled';
-  riderName?: string;
-  riderPhone?: string;
-  riderId?: string;
-  trackingNumber?: string;
-  deliveryNotes?: string;
+  rider_id?: string;
+  rider_name?: string;
+  rider_phone?: string;
+  tracking_number?: string;
+  notes?: string;
   amount: number;
-  paymentStatus: 'pending' | 'paid' | 'failed' | 'refunded';
-  paymentMethod: string;
-  paymentReference?: string;
-  confirmedByCustomer: boolean;
-  confirmationTime?: string;
-  signature?: string;
-  photo?: string;
+  payment_status: 'pending' | 'paid';
+  confirmed_by_customer: boolean;
+  confirmation_time?: string;
   rating?: number;
   feedback?: string;
-  createdAt: string;
-  updatedAt: string;
+  created_at: string;
 }
 
-interface DeliveryStats {
+interface Rider {
+  id: string;
+  name: string;
+  phone: string;
+  email: string | null;
+  national_id: string | null;
+  vehicle_type: 'bicycle' | 'motorcycle' | 'car';
+  vehicle_plate: string | null;
+  zone_id: number | null;
+  zone_name: string | null;
+  status: 'active' | 'inactive' | 'on_delivery';
+  total_deliveries: number;
+  rating: number;
+  notes: string | null;
+  completed_deliveries?: number;
+  active_deliveries?: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface DeliveryZone {
+  id: number;
+  name: string;
+  coverage: string;
+}
+
+interface ApiResponse {
+  deliveries: Delivery[];
+  page: number;
+  limit: number;
   total: number;
-  scheduled: number;
-  processing: number;
-  outForDelivery: number;
-  delivered: number;
-  failed: number;
-  skipped: number;
-  rescheduled: number;
-  todayDeliveries: number;
-  tomorrowDeliveries: number;
-  weekDeliveries: number;
-  completionRate: number;
-  onTimeRate: number;
-  averageRating: number;
+  pages: number;
 }
 
-const statusOptions = [
+interface RidersApiResponse {
+  riders: Rider[];
+  page: number;
+  limit: number;
+  total: number;
+  pages: number;
+}
+
+const deliveryStatusOptions = [
   { value: 'all', label: 'All Status' },
-  { value: 'scheduled', label: 'Scheduled', color: 'bg-blue-500' },
-  { value: 'processing', label: 'Processing', color: 'bg-purple-500' },
-  { value: 'out_for_delivery', label: 'Out for Delivery', color: 'bg-orange-500' },
-  { value: 'delivered', label: 'Delivered', color: 'bg-green-500' },
-  { value: 'failed', label: 'Failed', color: 'bg-red-500' },
-  { value: 'skipped', label: 'Skipped', color: 'bg-gray-500' },
-  { value: 'rescheduled', label: 'Rescheduled', color: 'bg-yellow-500' },
+  { value: 'scheduled', label: 'Scheduled' },
+  { value: 'processing', label: 'Processing' },
+  { value: 'out_for_delivery', label: 'Out for Delivery' },
+  { value: 'delivered', label: 'Delivered' },
+  { value: 'failed', label: 'Failed' },
+  { value: 'skipped', label: 'Skipped' },
+  { value: 'rescheduled', label: 'Rescheduled' },
 ];
 
-const paymentStatusOptions = [
-  { value: 'all', label: 'All Payments' },
-  { value: 'paid', label: 'Paid', color: 'bg-green-500' },
-  { value: 'pending', label: 'Pending', color: 'bg-yellow-500' },
-  { value: 'failed', label: 'Failed', color: 'bg-red-500' },
-  { value: 'refunded', label: 'Refunded', color: 'bg-purple-500' },
+const riderStatusOptions = [
+  { value: 'all', label: 'All Status' },
+  { value: 'active', label: 'Active' },
+  { value: 'on_delivery', label: 'On Delivery' },
+  { value: 'inactive', label: 'Inactive' },
+];
+
+const vehicleTypeOptions = [
+  { value: 'bicycle', label: 'Bicycle', icon: Bike },
+  { value: 'motorcycle', label: 'Motorcycle', icon: Bike },
+  { value: 'car', label: 'Car', icon: Car },
 ];
 
 const SubscriptionDeliveries = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState('deliveries');
   
+  // Deliveries state
   const [deliveries, setDeliveries] = useState<Delivery[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState<string>('all');
-  const [selectedPaymentStatus, setSelectedPaymentStatus] = useState<string>('all');
-  const [selectedDate, setSelectedDate] = useState<string>('all');
+  const [deliveriesLoading, setDeliveriesLoading] = useState(true);
+  const [deliveriesError, setDeliveriesError] = useState<string | null>(null);
+  const [deliverySearch, setDeliverySearch] = useState('');
+  const [selectedDeliveryStatus, setSelectedDeliveryStatus] = useState<string>('all');
+  const [selectedDeliveryDate, setSelectedDeliveryDate] = useState<string>('all');
   const [selectedRider, setSelectedRider] = useState<string>('all');
+  const [deliveryPage, setDeliveryPage] = useState(1);
+  const [deliveryTotalPages, setDeliveryTotalPages] = useState(1);
+  const [totalDeliveries, setTotalDeliveries] = useState(0);
   
-  const [showDeliveryDialog, setShowDeliveryDialog] = useState(false);
-  const [showAssignRiderDialog, setShowAssignRiderDialog] = useState(false);
-  const [showRescheduleDialog, setShowRescheduleDialog] = useState(false);
-  const [showDeliveryDetails, setShowDeliveryDetails] = useState(false);
-  const [selectedDelivery, setSelectedDelivery] = useState<Delivery | null>(null);
-  
-  const [riderForm, setRiderForm] = useState({
-    riderId: '',
-    riderName: '',
-    riderPhone: '',
-    trackingNumber: ''
-  });
-  
-  const [rescheduleForm, setRescheduleForm] = useState({
-    newDate: '',
-    newTime: '',
-    reason: ''
-  });
-  
-  const [stats, setStats] = useState<DeliveryStats>({
+  // Riders state
+  const [riders, setRiders] = useState<Rider[]>([]);
+  const [ridersLoading, setRidersLoading] = useState(true);
+  const [ridersError, setRidersError] = useState<string | null>(null);
+  const [riderSearch, setRiderSearch] = useState('');
+  const [selectedRiderStatus, setSelectedRiderStatus] = useState<string>('all');
+  const [riderPage, setRiderPage] = useState(1);
+  const [riderTotalPages, setRiderTotalPages] = useState(1);
+  const [totalRiders, setTotalRiders] = useState(0);
+  const [riderStats, setRiderStats] = useState({
     total: 0,
-    scheduled: 0,
-    processing: 0,
-    outForDelivery: 0,
-    delivered: 0,
-    failed: 0,
-    skipped: 0,
-    rescheduled: 0,
-    todayDeliveries: 0,
-    tomorrowDeliveries: 0,
-    weekDeliveries: 0,
-    completionRate: 0,
-    onTimeRate: 0,
-    averageRating: 0
+    active: 0,
+    on_delivery: 0,
+    avg_rating: 0
   });
-
-  const [riders, setRiders] = useState<{ id: string; name: string; phone: string; activeDeliveries: number }[]>([]);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(10);
+  
+  // Delivery zones for dropdown
+  const [deliveryZones, setDeliveryZones] = useState<DeliveryZone[]>([]);
+  
+  // UI state
+  const [showAssignRiderDialog, setShowAssignRiderDialog] = useState(false);
+  const [showRiderDialog, setShowRiderDialog] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [selectedDelivery, setSelectedDelivery] = useState<Delivery | null>(null);
+  const [editingRider, setEditingRider] = useState<Rider | null>(null);
+  const [selectedItem, setSelectedItem] = useState<any>(null);
+  const [updating, setUpdating] = useState(false);
+  
+  // Form state for riders
+  const [riderForm, setRiderForm] = useState<Partial<Rider>>({
+    name: '',
+    phone: '',
+    email: '',
+    national_id: '',
+    vehicle_type: 'motorcycle',
+    vehicle_plate: '',
+    zone_id: null,
+    status: 'active',
+    notes: ''
+  });
 
   useEffect(() => {
-    fetchDeliveries();
-    fetchRiders();
+    fetchDeliveryZones();
   }, []);
 
+  useEffect(() => {
+    if (activeTab === 'deliveries') {
+      fetchDeliveries();
+      fetchRidersForDropdown();
+    } else {
+      fetchRiders();
+      fetchRiderStats();
+    }
+  }, [
+    activeTab, 
+    deliveryPage, 
+    selectedDeliveryStatus, 
+    selectedDeliveryDate, 
+    selectedRider, 
+    deliverySearch,
+    riderPage,
+    selectedRiderStatus,
+    riderSearch
+  ]);
+
   const fetchDeliveries = async () => {
-    setLoading(true);
+    setDeliveriesLoading(true);
+    setDeliveriesError(null);
     try {
-      // Replace with actual API call
-      const mockDeliveries: Delivery[] = [
-        {
-          id: '1',
-          deliveryNumber: 'DEL-202603-001',
-          subscriptionId: '1',
-          subscriptionNumber: 'SUB-202602-0001',
-          customerName: 'Brian Phiri',
-          customerPhone: '+265991234567',
-          customerAddress: 'Area 123, Lilongwe',
-          planName: 'Weekly Veggie Box',
-          planPrice: 15000,
-          scheduledDate: '2026-03-04',
-          scheduledTime: '10:00 - 12:00',
-          status: 'scheduled',
-          amount: 15000,
-          paymentStatus: 'pending',
-          paymentMethod: 'airtel_money',
-          confirmedByCustomer: false,
-          createdAt: '2026-02-25T10:30:00Z',
-          updatedAt: '2026-02-25T10:30:00Z'
-        },
-        {
-          id: '2',
-          deliveryNumber: 'DEL-202603-002',
-          subscriptionId: '2',
-          subscriptionNumber: 'SUB-202602-0002',
-          customerName: 'Mary Banda',
-          customerPhone: '+265992345678',
-          customerAddress: 'Area 25, Lilongwe',
-          planName: 'Daily Bread Club',
-          planPrice: 9000,
-          scheduledDate: '2026-03-03',
-          scheduledTime: '08:00 - 10:00',
-          status: 'processing',
-          riderName: 'James Banda',
-          riderPhone: '+265991234568',
-          trackingNumber: 'TRK123456',
-          amount: 9000,
-          paymentStatus: 'pending',
-          paymentMethod: 'cash',
-          confirmedByCustomer: false,
-          createdAt: '2026-02-24T14:20:00Z',
-          updatedAt: '2026-03-02T09:00:00Z'
-        },
-        {
-          id: '3',
-          deliveryNumber: 'DEL-202602-003',
-          subscriptionId: '3',
-          subscriptionNumber: 'SUB-202602-0003',
-          customerName: 'John Chimwala',
-          customerPhone: '+265993456789',
-          customerAddress: 'Area 47, Lilongwe',
-          planName: 'Dairy Delight',
-          planPrice: 25000,
-          scheduledDate: '2026-02-27',
-          scheduledTime: '14:00 - 16:00',
-          actualDeliveryDate: '2026-02-27',
-          actualDeliveryTime: '14:30',
-          status: 'delivered',
-          riderName: 'Peter Mwale',
-          riderPhone: '+265994567890',
-          trackingNumber: 'TRK123457',
-          amount: 25000,
-          paymentStatus: 'paid',
-          paymentMethod: 'tnm_mpamba',
-          paymentReference: 'TRX789012',
-          confirmedByCustomer: true,
-          confirmationTime: '2026-02-27T15:00:00Z',
-          rating: 5,
-          feedback: 'Great service, on time!',
-          createdAt: '2026-02-20T09:15:00Z',
-          updatedAt: '2026-02-27T15:00:00Z'
-        },
-        {
-          id: '4',
-          deliveryNumber: 'DEL-202602-004',
-          subscriptionId: '4',
-          subscriptionNumber: 'SUB-202602-0004',
-          customerName: 'Alice Phiri',
-          customerPhone: '+265994567890',
-          customerAddress: 'Area 18, Lilongwe',
-          planName: 'Family Essentials',
-          planPrice: 65000,
-          scheduledDate: '2026-02-29',
-          scheduledTime: '09:00 - 11:00',
-          status: 'rescheduled',
-          rescheduledDate: '2026-03-02',
-          amount: 65000,
-          paymentStatus: 'pending',
-          paymentMethod: 'card',
-          confirmedByCustomer: false,
-          createdAt: '2026-02-22T11:45:00Z',
-          updatedAt: '2026-02-28T10:00:00Z'
-        },
-        {
-          id: '5',
-          deliveryNumber: 'DEL-202602-005',
-          subscriptionId: '5',
-          subscriptionNumber: 'SUB-202602-0005',
-          customerName: 'David Banda',
-          customerPhone: '+265995678901',
-          customerAddress: 'Area 33, Lilongwe',
-          planName: 'Weekly Veggie Box',
-          planPrice: 15000,
-          scheduledDate: '2026-02-25',
-          scheduledTime: '11:00 - 13:00',
-          actualDeliveryDate: '2026-02-25',
-          actualDeliveryTime: '12:15',
-          status: 'delivered',
-          riderName: 'James Banda',
-          riderPhone: '+265991234568',
-          trackingNumber: 'TRK123458',
-          amount: 15000,
-          paymentStatus: 'paid',
-          paymentMethod: 'airtel_money',
-          paymentReference: 'TRX123456',
-          confirmedByCustomer: true,
-          confirmationTime: '2026-02-25T13:00:00Z',
-          rating: 4,
-          feedback: 'Good, but a bit late',
-          createdAt: '2026-02-18T16:30:00Z',
-          updatedAt: '2026-02-25T13:00:00Z'
-        },
-        {
-          id: '6',
-          deliveryNumber: 'DEL-202603-006',
-          subscriptionId: '6',
-          subscriptionNumber: 'SUB-202602-0006',
-          customerName: 'Grace Mwale',
-          customerPhone: '+265996789012',
-          customerAddress: 'Area 12, Lilongwe',
-          planName: 'Daily Bread Club',
-          planPrice: 9000,
-          scheduledDate: '2026-03-02',
-          scheduledTime: '07:00 - 09:00',
-          status: 'out_for_delivery',
-          riderName: 'Peter Mwale',
-          riderPhone: '+265994567890',
-          trackingNumber: 'TRK123459',
-          amount: 9000,
-          paymentStatus: 'pending',
-          paymentMethod: 'cash',
-          confirmedByCustomer: false,
-          createdAt: '2026-02-23T08:15:00Z',
-          updatedAt: '2026-03-02T06:30:00Z'
-        },
-        {
-          id: '7',
-          deliveryNumber: 'DEL-202602-007',
-          subscriptionId: '7',
-          subscriptionNumber: 'SUB-202602-0007',
-          customerName: 'Peter Kachale',
-          customerPhone: '+265997890123',
-          customerAddress: 'Area 29, Lilongwe',
-          planName: 'Dairy Delight',
-          planPrice: 25000,
-          scheduledDate: '2026-02-22',
-          scheduledTime: '15:00 - 17:00',
-          status: 'failed',
-          failureReason: 'Customer not home',
-          amount: 25000,
-          paymentStatus: 'refunded',
-          paymentMethod: 'tnm_mpamba',
-          paymentReference: 'TRX345678',
-          confirmedByCustomer: false,
-          createdAt: '2026-02-15T12:45:00Z',
-          updatedAt: '2026-02-22T17:30:00Z'
-        }
-      ];
+      const params = new URLSearchParams({
+        page: deliveryPage.toString(),
+        limit: '10',
+        ...(selectedDeliveryStatus !== 'all' && { status: selectedDeliveryStatus }),
+        ...(selectedDeliveryDate !== 'all' && { date: selectedDeliveryDate }),
+        ...(selectedRider !== 'all' && { riderId: selectedRider }),
+        ...(deliverySearch && { search: deliverySearch })
+      });
+
+      const response = await api.get<ApiResponse>(`/admin/subscriptions/deliveries?${params}`);
       
-      setDeliveries(mockDeliveries);
-      calculateStats(mockDeliveries);
-    } catch (error) {
+      setDeliveries(response.data.deliveries);
+      setDeliveryTotalPages(response.data.pages);
+      setTotalDeliveries(response.data.total);
+    } catch (error: any) {
       console.error('Error fetching deliveries:', error);
+      setDeliveriesError(error.response?.data?.message || 'Failed to load deliveries');
       toast({
         title: 'Error',
-        description: 'Failed to load deliveries',
+        description: 'Failed to load deliveries. Please try again.',
         variant: 'destructive',
       });
     } finally {
-      setLoading(false);
+      setDeliveriesLoading(false);
     }
   };
 
   const fetchRiders = async () => {
+    setRidersLoading(true);
+    setRidersError(null);
     try {
-      // Replace with actual API call
-      setRiders([
-        { id: '1', name: 'James Banda', phone: '+265991234568', activeDeliveries: 3 },
-        { id: '2', name: 'Peter Mwale', phone: '+265994567890', activeDeliveries: 2 },
-        { id: '3', name: 'Mary Chimwala', phone: '+265993456789', activeDeliveries: 1 },
-        { id: '4', name: 'John Phiri', phone: '+265992345678', activeDeliveries: 4 },
-      ]);
-    } catch (error) {
+      const params = new URLSearchParams({
+        page: riderPage.toString(),
+        limit: '10',
+        ...(selectedRiderStatus !== 'all' && { status: selectedRiderStatus }),
+        ...(riderSearch && { search: riderSearch })
+      });
+
+      const response = await api.get<RidersApiResponse>(`/admin/riders?${params}`);
+      
+      setRiders(response.data.riders);
+      setRiderTotalPages(response.data.pages);
+      setTotalRiders(response.data.total);
+    } catch (error: any) {
       console.error('Error fetching riders:', error);
+      setRidersError(error.response?.data?.message || 'Failed to load riders');
+      toast({
+        title: 'Error',
+        description: 'Failed to load riders. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setRidersLoading(false);
     }
   };
 
-  const calculateStats = (data: Delivery[]) => {
-    const today = new Date().toISOString().split('T')[0];
-    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    const weekFromNow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-    
-    const delivered = data.filter(d => d.status === 'delivered');
-    const onTime = delivered.filter(d => {
-      if (!d.actualDeliveryDate || !d.scheduledDate) return false;
-      return d.actualDeliveryDate === d.scheduledDate;
-    });
-    
-    setStats({
-      total: data.length,
-      scheduled: data.filter(d => d.status === 'scheduled').length,
-      processing: data.filter(d => d.status === 'processing').length,
-      outForDelivery: data.filter(d => d.status === 'out_for_delivery').length,
-      delivered: delivered.length,
-      failed: data.filter(d => d.status === 'failed').length,
-      skipped: data.filter(d => d.status === 'skipped').length,
-      rescheduled: data.filter(d => d.status === 'rescheduled').length,
-      todayDeliveries: data.filter(d => d.scheduledDate === today).length,
-      tomorrowDeliveries: data.filter(d => d.scheduledDate === tomorrow).length,
-      weekDeliveries: data.filter(d => d.scheduledDate >= today && d.scheduledDate <= weekFromNow).length,
-      completionRate: data.length > 0 ? (delivered.length / data.length) * 100 : 0,
-      onTimeRate: delivered.length > 0 ? (onTime.length / delivered.length) * 100 : 0,
-      averageRating: delivered.reduce((sum, d) => sum + (d.rating || 0), 0) / delivered.length || 0
-    });
-  };
-
-  const handleViewDelivery = (delivery: Delivery) => {
-    setSelectedDelivery(delivery);
-    setShowDeliveryDetails(true);
-  };
-
-  const handleAssignRider = (delivery: Delivery) => {
-    setSelectedDelivery(delivery);
-    setRiderForm({
-      riderId: delivery.riderId || '',
-      riderName: delivery.riderName || '',
-      riderPhone: delivery.riderPhone || '',
-      trackingNumber: delivery.trackingNumber || ''
-    });
-    setShowAssignRiderDialog(true);
-  };
-
-  const handleReschedule = (delivery: Delivery) => {
-    setSelectedDelivery(delivery);
-    setRescheduleForm({
-      newDate: '',
-      newTime: '',
-      reason: ''
-    });
-    setShowRescheduleDialog(true);
-  };
-
-  const handleUpdateStatus = async (deliveryId: string, newStatus: Delivery['status']) => {
+  const fetchRiderStats = async () => {
     try {
-      setDeliveries(prev => prev.map(d => 
-        d.id === deliveryId ? { ...d, status: newStatus } : d
-      ));
-      calculateStats(deliveries);
+      const response = await api.get('/admin/riders/stats');
+      setRiderStats(response.data);
+    } catch (error) {
+      console.error('Error fetching rider stats:', error);
+    }
+  };
+
+  const fetchRidersForDropdown = async () => {
+    try {
+      const response = await api.get('/admin/riders?limit=100');
+      setRiders(response.data.riders);
+    } catch (error) {
+      console.error('Error fetching riders for dropdown:', error);
+    }
+  };
+
+  const fetchDeliveryZones = async () => {
+    try {
+      const response = await api.get('/admin/delivery-zones');
+      setDeliveryZones(response.data);
+    } catch (error) {
+      console.error('Error fetching delivery zones:', error);
+    }
+  };
+
+  const handleUpdateDeliveryStatus = async (deliveryId: string, newStatus: Delivery['status'], notes?: string) => {
+    try {
+      setUpdating(true);
+      await api.patch(`/admin/subscriptions/deliveries/${deliveryId}`, {
+        status: newStatus,
+        notes,
+        actualDeliveryTime: newStatus === 'delivered' ? new Date().toISOString() : undefined
+      });
+      
+      fetchDeliveries();
       
       toast({
         title: 'Status Updated',
         description: `Delivery status changed to ${newStatus.replace('_', ' ')}`,
       });
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: 'Error',
-        description: 'Failed to update status',
+        description: error.response?.data?.message || 'Failed to update status',
         variant: 'destructive',
       });
+    } finally {
+      setUpdating(false);
     }
   };
 
-  const handleAssignRiderSubmit = () => {
+  const handleAssignRider = async () => {
     if (!selectedDelivery) return;
     
     try {
-      setDeliveries(prev => prev.map(d => 
-        d.id === selectedDelivery.id 
-          ? { 
-              ...d, 
-              riderId: riderForm.riderId,
-              riderName: riderForm.riderName,
-              riderPhone: riderForm.riderPhone,
-              trackingNumber: riderForm.trackingNumber,
-              status: 'processing'
-            }
-          : d
-      ));
+      setUpdating(true);
+      await api.patch(`/admin/subscriptions/deliveries/${selectedDelivery.id}`, {
+        riderId: selectedDelivery.rider_id,
+        status: 'processing'
+      });
       
       setShowAssignRiderDialog(false);
+      fetchDeliveries();
+      
       toast({
         title: 'Rider Assigned',
-        description: `Delivery assigned to ${riderForm.riderName}`,
+        description: `Delivery assigned successfully`,
       });
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: 'Error',
-        description: 'Failed to assign rider',
+        description: error.response?.data?.message || 'Failed to assign rider',
         variant: 'destructive',
       });
+    } finally {
+      setUpdating(false);
     }
   };
 
-  const handleRescheduleSubmit = () => {
-    if (!selectedDelivery) return;
-    
+  const handleCreateRider = async () => {
+    if (!riderForm.name || !riderForm.phone) {
+      toast({
+        title: 'Validation Error',
+        description: 'Name and phone are required',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setUpdating(true);
     try {
-      setDeliveries(prev => prev.map(d => 
-        d.id === selectedDelivery.id 
-          ? { 
-              ...d, 
-              scheduledDate: rescheduleForm.newDate,
-              scheduledTime: rescheduleForm.newTime,
-              status: 'rescheduled'
-            }
-          : d
-      ));
-      
-      setShowRescheduleDialog(false);
+      const response = await api.post('/admin/riders', riderForm);
+      setRiders([response.data, ...riders]);
+      setShowRiderDialog(false);
+      resetRiderForm();
+      fetchRiderStats();
       toast({
-        title: 'Delivery Rescheduled',
-        description: `New delivery date: ${format(new Date(rescheduleForm.newDate), 'PPP')}`,
+        title: 'Success',
+        description: 'Rider created successfully',
       });
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: 'Error',
-        description: 'Failed to reschedule delivery',
+        description: error.response?.data?.message || 'Failed to create rider',
+        variant: 'destructive',
+      });
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleUpdateRider = async () => {
+    if (!editingRider) return;
+
+    setUpdating(true);
+    try {
+      const response = await api.put(`/admin/riders/${editingRider.id}`, riderForm);
+      setRiders(riders.map(r => r.id === editingRider.id ? response.data : r));
+      setShowRiderDialog(false);
+      resetRiderForm();
+      fetchRiderStats();
+      toast({
+        title: 'Success',
+        description: 'Rider updated successfully',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to update rider',
+        variant: 'destructive',
+      });
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleDeleteRider = async () => {
+    if (!selectedItem) return;
+
+    setUpdating(true);
+    try {
+      await api.delete(`/admin/riders/${selectedItem.id}`);
+      setRiders(riders.filter(r => r.id !== selectedItem.id));
+      setShowDeleteDialog(false);
+      fetchRiderStats();
+      toast({
+        title: 'Success',
+        description: 'Rider deleted successfully',
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to delete rider',
+        variant: 'destructive',
+      });
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleToggleRiderStatus = async (rider: Rider) => {
+    try {
+      const response = await api.patch(`/admin/riders/${rider.id}/toggle`);
+      setRiders(riders.map(r => r.id === rider.id ? { ...r, status: response.data.status } : r));
+      fetchRiderStats();
+      toast({
+        title: 'Status Updated',
+        description: response.data.message,
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to toggle status',
         variant: 'destructive',
       });
     }
   };
 
-  const handlePrintDeliveryNote = (delivery: Delivery) => {
-    // Implement print functionality
-    window.print();
+  const resetRiderForm = () => {
+    setRiderForm({
+      name: '',
+      phone: '',
+      email: '',
+      national_id: '',
+      vehicle_type: 'motorcycle',
+      vehicle_plate: '',
+      zone_id: null,
+      status: 'active',
+      notes: ''
+    });
+    setEditingRider(null);
   };
 
-  const getStatusColor = (status: string) => {
+  const handleEditRider = (rider: Rider) => {
+    setEditingRider(rider);
+    setRiderForm({
+      name: rider.name,
+      phone: rider.phone,
+      email: rider.email || '',
+      national_id: rider.national_id || '',
+      vehicle_type: rider.vehicle_type,
+      vehicle_plate: rider.vehicle_plate || '',
+      zone_id: rider.zone_id,
+      status: rider.status,
+      notes: rider.notes || ''
+    });
+    setShowRiderDialog(true);
+  };
+
+  const getInitials = (name: string) => {
+    return name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+  };
+
+  const getDeliveryStatusColor = (status: string) => {
     switch(status) {
       case 'delivered': return 'bg-green-500';
       case 'out_for_delivery': return 'bg-orange-500';
@@ -553,434 +552,604 @@ const SubscriptionDeliveries = () => {
     }
   };
 
-  const getPaymentStatusColor = (status: string) => {
+  const getRiderStatusColor = (status: string) => {
     switch(status) {
-      case 'paid': return 'bg-green-500';
-      case 'pending': return 'bg-yellow-500';
-      case 'failed': return 'bg-red-500';
-      case 'refunded': return 'bg-purple-500';
+      case 'active': return 'bg-green-500';
+      case 'on_delivery': return 'bg-blue-500';
+      case 'inactive': return 'bg-gray-500';
       default: return 'bg-gray-500';
     }
   };
 
-  const filteredDeliveries = deliveries.filter(delivery => {
-    const matchesSearch = 
-      delivery.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      delivery.customerPhone.includes(searchTerm) ||
-      delivery.deliveryNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      delivery.subscriptionNumber.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesStatus = selectedStatus === 'all' || delivery.status === selectedStatus;
-    const matchesPaymentStatus = selectedPaymentStatus === 'all' || delivery.paymentStatus === selectedPaymentStatus;
-    
-    let matchesDate = true;
-    if (selectedDate === 'today') {
-      matchesDate = delivery.scheduledDate === new Date().toISOString().split('T')[0];
-    } else if (selectedDate === 'tomorrow') {
-      const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      matchesDate = delivery.scheduledDate === tomorrow;
-    } else if (selectedDate === 'week') {
-      const today = new Date().toISOString().split('T')[0];
-      const weekFromNow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-      matchesDate = delivery.scheduledDate >= today && delivery.scheduledDate <= weekFromNow;
+  const getVehicleIcon = (type: string) => {
+    switch(type) {
+      case 'bicycle': return <Bike className="w-4 h-4" />;
+      case 'motorcycle': return <Bike className="w-4 h-4" />;
+      case 'car': return <Car className="w-4 h-4" />;
+      default: return <Bike className="w-4 h-4" />;
     }
-    
-    const matchesRider = selectedRider === 'all' || delivery.riderId === selectedRider;
-    
-    return matchesSearch && matchesStatus && matchesPaymentStatus && matchesDate && matchesRider;
-  });
+  };
 
-  // Pagination
-  const indexOfLastItem = currentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentItems = filteredDeliveries.slice(indexOfFirstItem, indexOfLastItem);
-  const totalPages = Math.ceil(filteredDeliveries.length / itemsPerPage);
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="w-8 h-8 animate-spin text-orange-500" />
-      </div>
-    );
-  }
+  const renderStars = (rating: number) => {
+    const stars = [];
+    const fullStars = Math.floor(rating);
+    const hasHalfStar = rating % 1 >= 0.5;
+    
+    for (let i = 0; i < 5; i++) {
+      if (i < fullStars) {
+        stars.push(<Star key={i} className="w-3 h-3 fill-yellow-400 text-yellow-400" />);
+      } else if (i === fullStars && hasHalfStar) {
+        stars.push(
+          <div key={i} className="relative">
+            <Star className="w-3 h-3 text-gray-300" />
+            <Star className="w-3 h-3 fill-yellow-400 text-yellow-400 absolute top-0 left-0 overflow-hidden" style={{ clipPath: 'inset(0 50% 0 0)' }} />
+          </div>
+        );
+      } else {
+        stars.push(<Star key={i} className="w-3 h-3 text-gray-300" />);
+      }
+    }
+    return <div className="flex gap-0.5">{stars}</div>;
+  };
 
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-display font-bold">Delivery Schedule</h1>
+          <h1 className="text-3xl font-display font-bold">Delivery Management</h1>
           <p className="text-muted-foreground mt-1">
-            Manage and track all subscription deliveries
+            Manage deliveries and delivery riders
           </p>
         </div>
         
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={fetchDeliveries}>
-            <RefreshCw className="w-4 h-4 mr-2" />
+          <Button variant="outline" onClick={activeTab === 'deliveries' ? fetchDeliveries : fetchRiders} disabled={activeTab === 'deliveries' ? deliveriesLoading : ridersLoading}>
+            <RefreshCw className={`w-4 h-4 mr-2 ${(activeTab === 'deliveries' ? deliveriesLoading : ridersLoading) ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
           <Button variant="outline">
             <Download className="w-4 h-4 mr-2" />
             Export
           </Button>
-          <Button className="bg-gradient-to-r from-orange-500 to-red-500 text-white">
-            <Plus className="w-4 h-4 mr-2" />
-            Schedule Delivery
-          </Button>
         </div>
       </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 lg:grid-cols-8 gap-4">
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-sm text-muted-foreground">Total</p>
-            <p className="text-2xl font-bold">{stats.total}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-blue-50 dark:bg-blue-950/30">
-          <CardContent className="p-4">
-            <p className="text-sm text-blue-600 dark:text-blue-400">Scheduled</p>
-            <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">{stats.scheduled}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-purple-50 dark:bg-purple-950/30">
-          <CardContent className="p-4">
-            <p className="text-sm text-purple-600 dark:text-purple-400">Processing</p>
-            <p className="text-2xl font-bold text-purple-700 dark:text-purple-300">{stats.processing}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-orange-50 dark:bg-orange-950/30">
-          <CardContent className="p-4">
-            <p className="text-sm text-orange-600 dark:text-orange-400">Out for Delivery</p>
-            <p className="text-2xl font-bold text-orange-700 dark:text-orange-300">{stats.outForDelivery}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-green-50 dark:bg-green-950/30">
-          <CardContent className="p-4">
-            <p className="text-sm text-green-600 dark:text-green-400">Delivered</p>
-            <p className="text-2xl font-bold text-green-700 dark:text-green-300">{stats.delivered}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-red-50 dark:bg-red-950/30">
-          <CardContent className="p-4">
-            <p className="text-sm text-red-600 dark:text-red-400">Failed</p>
-            <p className="text-2xl font-bold text-red-700 dark:text-red-300">{stats.failed}</p>
-          </CardContent>
-        </Card>
-        <Card className="bg-yellow-50 dark:bg-yellow-950/30">
-          <CardContent className="p-4">
-            <p className="text-sm text-yellow-600 dark:text-yellow-400">Rescheduled</p>
-            <p className="text-2xl font-bold text-yellow-700 dark:text-yellow-300">{stats.rescheduled}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-sm text-muted-foreground">Today</p>
-            <p className="text-2xl font-bold">{stats.todayDeliveries}</p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* Tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="deliveries">Deliveries</TabsTrigger>
+          <TabsTrigger value="riders">Riders</TabsTrigger>
+        </TabsList>
 
-      {/* Second Row Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-sm text-muted-foreground">Tomorrow</p>
-            <p className="text-2xl font-bold">{stats.tomorrowDeliveries}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <p className="text-sm text-muted-foreground">This Week</p>
-            <p className="text-2xl font-bold">{stats.weekDeliveries}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">Completion Rate</p>
-              <span className="text-sm font-medium">{stats.completionRate.toFixed(1)}%</span>
-            </div>
-            <Progress value={stats.completionRate} className="h-2 mt-2" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <p className="text-sm text-muted-foreground">On-Time Rate</p>
-              <span className="text-sm font-medium">{stats.onTimeRate.toFixed(1)}%</span>
-            </div>
-            <Progress value={stats.onTimeRate} className="h-2 mt-2" />
-          </CardContent>
-        </Card>
-      </div>
+        {/* Deliveries Tab */}
+        <TabsContent value="deliveries" className="space-y-6">
+          {/* Stats Cards - Deliveries */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card>
+              <CardContent className="p-4">
+                <p className="text-sm text-muted-foreground">Total Deliveries</p>
+                <p className="text-2xl font-bold">{totalDeliveries}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-blue-50 dark:bg-blue-950/30">
+              <CardContent className="p-4">
+                <p className="text-sm text-blue-600 dark:text-blue-400">Scheduled</p>
+                <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">
+                  {deliveries.filter(d => d.status === 'scheduled').length}
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="bg-orange-50 dark:bg-orange-950/30">
+              <CardContent className="p-4">
+                <p className="text-sm text-orange-600 dark:text-orange-400">Out for Delivery</p>
+                <p className="text-2xl font-bold text-orange-700 dark:text-orange-300">
+                  {deliveries.filter(d => d.status === 'out_for_delivery').length}
+                </p>
+              </CardContent>
+            </Card>
+            <Card className="bg-green-50 dark:bg-green-950/30">
+              <CardContent className="p-4">
+                <p className="text-sm text-green-600 dark:text-green-400">Delivered Today</p>
+                <p className="text-2xl font-bold text-green-700 dark:text-green-300">
+                  {deliveries.filter(d => d.status === 'delivered' && isToday(new Date(d.delivery_date))).length}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
 
-      {/* Filters */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col sm:flex-row gap-4">
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search by customer, delivery #, subscription #..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-9"
-                />
+          {/* Filters - Deliveries */}
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col sm:flex-row gap-4">
+                  <div className="flex-1 relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Search by customer, delivery #, subscription #..."
+                      value={deliverySearch}
+                      onChange={(e) => setDeliverySearch(e.target.value)}
+                      className="pl-9"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Select value={selectedDeliveryStatus} onValueChange={setSelectedDeliveryStatus}>
+                    <SelectTrigger className="w-[160px]">
+                      <SelectValue placeholder="Status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {deliveryStatusOptions.map(option => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={selectedDeliveryDate} onValueChange={setSelectedDeliveryDate}>
+                    <SelectTrigger className="w-[160px]">
+                      <SelectValue placeholder="Delivery Date" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Dates</SelectItem>
+                      <SelectItem value="today">Today</SelectItem>
+                      <SelectItem value="tomorrow">Tomorrow</SelectItem>
+                      <SelectItem value="week">This Week</SelectItem>
+                    </SelectContent>
+                  </Select>
+
+                  <Select value={selectedRider} onValueChange={setSelectedRider}>
+                    <SelectTrigger className="w-[160px]">
+                      <SelectValue placeholder="Rider" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Riders</SelectItem>
+                      {riders.map(rider => (
+                        <SelectItem key={rider.id} value={rider.id}>
+                          {rider.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={() => {
+                      setDeliverySearch('');
+                      setSelectedDeliveryStatus('all');
+                      setSelectedDeliveryDate('all');
+                      setSelectedRider('all');
+                      setDeliveryPage(1);
+                    }}
+                  >
+                    Clear Filters
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Deliveries Table */}
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Delivery #</TableHead>
+                    <TableHead>Customer</TableHead>
+                    <TableHead>Plan</TableHead>
+                    <TableHead>Delivery Date</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Rider</TableHead>
+                    <TableHead>Address</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {deliveriesLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8">
+                        <Loader2 className="w-6 h-6 animate-spin mx-auto text-orange-500" />
+                      </TableCell>
+                    </TableRow>
+                  ) : deliveries.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8">
+                        <Truck className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
+                        <p className="text-lg font-medium">No deliveries found</p>
+                        <p className="text-sm text-muted-foreground">
+                          Try adjusting your filters
+                        </p>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    deliveries.map((delivery) => (
+                      <TableRow key={delivery.id} className="cursor-pointer hover:bg-muted/50">
+                        <TableCell>
+                          <span className="font-mono text-sm">{delivery.delivery_number}</span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-8 w-8">
+                              <AvatarFallback className="bg-gradient-to-br from-orange-500 to-red-500 text-white text-xs">
+                                {getInitials(delivery.customer_name)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <p className="font-medium">{delivery.customer_name}</p>
+                              <p className="text-xs text-muted-foreground">{delivery.customer_phone}</p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <p className="font-medium">{delivery.plan_name}</p>
+                        </TableCell>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium">{format(new Date(delivery.delivery_date), 'MMM d, yyyy')}</p>
+                            {delivery.delivery_time && (
+                              <p className="text-xs text-muted-foreground">{delivery.delivery_time}</p>
+                            )}
+                            {isToday(new Date(delivery.delivery_date)) && (
+                              <Badge className="bg-green-500 text-white mt-1">Today</Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={`${getDeliveryStatusColor(delivery.status)} text-white`}>
+                            {delivery.status.replace(/_/g, ' ')}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          {delivery.rider_name ? (
+                            <div>
+                              <p className="font-medium">{delivery.rider_name}</p>
+                              <p className="text-xs text-muted-foreground">{delivery.rider_phone}</p>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">Not assigned</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <p className="text-sm truncate max-w-[200px]">{delivery.delivery_address}</p>
+                        </TableCell>
+                        <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" disabled={updating}>
+                                <MoreHorizontal className="w-4 h-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuLabel>Quick Actions</DropdownMenuLabel>
+                              <DropdownMenuItem 
+                                onClick={() => handleUpdateDeliveryStatus(delivery.id, 'out_for_delivery')}
+                                disabled={delivery.status === 'out_for_delivery' || delivery.status === 'delivered'}
+                              >
+                                <Truck className="w-4 h-4 mr-2" />
+                                Mark Out for Delivery
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => handleUpdateDeliveryStatus(delivery.id, 'delivered')}
+                                disabled={delivery.status === 'delivered'}
+                              >
+                                <CheckCircle className="w-4 h-4 mr-2" />
+                                Mark Delivered
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                onClick={() => handleUpdateDeliveryStatus(delivery.id, 'failed')}
+                                disabled={delivery.status === 'delivered'}
+                              >
+                                <XCircle className="w-4 h-4 mr-2" />
+                                Mark Failed
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onClick={() => {
+                                setSelectedDelivery(delivery);
+                                setShowAssignRiderDialog(true);
+                              }}>
+                                <User className="w-4 h-4 mr-2" />
+                                Assign Rider
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+
+          {/* Pagination - Deliveries */}
+          {deliveryTotalPages > 1 && (
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                Page {deliveryPage} of {deliveryTotalPages}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setDeliveryPage(p => Math.max(1, p - 1))}
+                  disabled={deliveryPage === 1}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setDeliveryPage(p => Math.min(deliveryTotalPages, p + 1))}
+                  disabled={deliveryPage === deliveryTotalPages}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
               </div>
             </div>
+          )}
+        </TabsContent>
 
-            <div className="flex flex-wrap gap-2">
-              <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-                <SelectTrigger className="w-[160px]">
+        {/* Riders Tab */}
+        <TabsContent value="riders" className="space-y-6">
+          {/* Stats Cards - Riders */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card>
+              <CardContent className="p-4">
+                <p className="text-sm text-muted-foreground">Total Riders</p>
+                <p className="text-2xl font-bold">{riderStats.total}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-green-50 dark:bg-green-950/30">
+              <CardContent className="p-4">
+                <p className="text-sm text-green-600 dark:text-green-400">Active</p>
+                <p className="text-2xl font-bold text-green-700 dark:text-green-300">{riderStats.active}</p>
+              </CardContent>
+            </Card>
+            <Card className="bg-blue-50 dark:bg-blue-950/30">
+              <CardContent className="p-4">
+                <p className="text-sm text-blue-600 dark:text-blue-400">On Delivery</p>
+                <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">{riderStats.on_delivery}</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="p-4">
+                <p className="text-sm text-muted-foreground">Avg. Rating</p>
+                <div className="flex items-center gap-2 mt-1">
+                  <p className="text-2xl font-bold">{riderStats.avg_rating.toFixed(1)}</p>
+                  <div className="flex">{renderStars(riderStats.avg_rating)}</div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Search and Add - Riders */}
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+              <Input
+                placeholder="Search by name, phone or email..."
+                value={riderSearch}
+                onChange={(e) => setRiderSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+            <div className="flex gap-2">
+              <Select value={selectedRiderStatus} onValueChange={setSelectedRiderStatus}>
+                <SelectTrigger className="w-[140px]">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
-                  {statusOptions.map(option => (
+                  {riderStatusOptions.map(option => (
                     <SelectItem key={option.value} value={option.value}>
-                      <div className="flex items-center gap-2">
-                        {option.color && <div className={`w-2 h-2 rounded-full ${option.color}`} />}
-                        {option.label}
-                      </div>
+                      {option.label}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-
-              <Select value={selectedPaymentStatus} onValueChange={setSelectedPaymentStatus}>
-                <SelectTrigger className="w-[160px]">
-                  <SelectValue placeholder="Payment" />
-                </SelectTrigger>
-                <SelectContent>
-                  {paymentStatusOptions.map(option => (
-                    <SelectItem key={option.value} value={option.value}>
-                      <div className="flex items-center gap-2">
-                        {option.color && <div className={`w-2 h-2 rounded-full ${option.color}`} />}
-                        {option.label}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              <Select value={selectedDate} onValueChange={setSelectedDate}>
-                <SelectTrigger className="w-[160px]">
-                  <SelectValue placeholder="Delivery Date" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Dates</SelectItem>
-                  <SelectItem value="today">Today</SelectItem>
-                  <SelectItem value="tomorrow">Tomorrow</SelectItem>
-                  <SelectItem value="week">This Week</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Select value={selectedRider} onValueChange={setSelectedRider}>
-                <SelectTrigger className="w-[160px]">
-                  <SelectValue placeholder="Rider" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Riders</SelectItem>
-                  {riders.map(rider => (
-                    <SelectItem key={rider.id} value={rider.id}>
-                      {rider.name} ({rider.activeDeliveries})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
               <Button 
-                variant="ghost" 
-                size="sm"
+                className="bg-gradient-to-r from-orange-500 to-red-500 text-white"
                 onClick={() => {
-                  setSearchTerm('');
-                  setSelectedStatus('all');
-                  setSelectedPaymentStatus('all');
-                  setSelectedDate('all');
-                  setSelectedRider('all');
+                  resetRiderForm();
+                  setShowRiderDialog(true);
                 }}
               >
-                Clear Filters
+                <Users className="w-4 h-4 mr-2" />
+                New Rider
               </Button>
             </div>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Results count */}
-      <div className="flex items-center justify-between">
-        <p className="text-sm text-muted-foreground">
-          Showing {indexOfFirstItem + 1} to {Math.min(indexOfLastItem, filteredDeliveries.length)} of {filteredDeliveries.length} deliveries
-        </p>
-      </div>
-
-      {/* Deliveries Table */}
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Delivery #</TableHead>
-                <TableHead>Customer</TableHead>
-                <TableHead>Plan</TableHead>
-                <TableHead>Scheduled Date</TableHead>
-                <TableHead>Time</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Rider</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead>Payment</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {currentItems.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={10} className="text-center py-8">
-                    <Truck className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
-                    <p className="text-lg font-medium">No deliveries found</p>
-                    <p className="text-sm text-muted-foreground">
-                      Try adjusting your filters or schedule a new delivery
-                    </p>
-                  </TableCell>
-                </TableRow>
-              ) : (
-                currentItems.map((delivery) => (
-                  <TableRow key={delivery.id} className="cursor-pointer hover:bg-muted/50">
-                    <TableCell onClick={() => handleViewDelivery(delivery)}>
-                      <span className="font-mono text-sm">{delivery.deliveryNumber}</span>
-                    </TableCell>
-                    <TableCell onClick={() => handleViewDelivery(delivery)}>
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-8 w-8">
-                          <AvatarFallback className="bg-gradient-to-br from-orange-500 to-red-500 text-white text-xs">
-                            {delivery.customerName.split(' ').map(n => n[0]).join('').toUpperCase()}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="font-medium">{delivery.customerName}</p>
-                          <p className="text-xs text-muted-foreground">{delivery.customerPhone}</p>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell onClick={() => handleViewDelivery(delivery)}>
-                      <p className="font-medium">{delivery.planName}</p>
-                      <p className="text-xs text-muted-foreground">MK {delivery.planPrice.toLocaleString()}</p>
-                    </TableCell>
-                    <TableCell onClick={() => handleViewDelivery(delivery)}>
-                      <div>
-                        <p className="font-medium">{format(new Date(delivery.scheduledDate), 'MMM d, yyyy')}</p>
-                        {isToday(new Date(delivery.scheduledDate)) && (
-                          <Badge className="bg-green-500 text-white mt-1">Today</Badge>
-                        )}
-                        {isTomorrow(new Date(delivery.scheduledDate)) && (
-                          <Badge className="bg-blue-500 text-white mt-1">Tomorrow</Badge>
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell onClick={() => handleViewDelivery(delivery)}>
-                      {delivery.scheduledTime || 'Anytime'}
-                    </TableCell>
-                    <TableCell onClick={() => handleViewDelivery(delivery)}>
-                      <Badge className={`${getStatusColor(delivery.status)} text-white`}>
-                        {delivery.status.replace(/_/g, ' ')}
-                      </Badge>
-                    </TableCell>
-                    <TableCell onClick={() => handleViewDelivery(delivery)}>
-                      {delivery.riderName ? (
-                        <div>
-                          <p className="font-medium">{delivery.riderName}</p>
-                          <p className="text-xs text-muted-foreground">{delivery.riderPhone}</p>
-                        </div>
-                      ) : (
-                        <span className="text-muted-foreground">Not assigned</span>
-                      )}
-                    </TableCell>
-                    <TableCell onClick={() => handleViewDelivery(delivery)}>
-                      <p className="font-medium">MK {delivery.amount.toLocaleString()}</p>
-                    </TableCell>
-                    <TableCell onClick={() => handleViewDelivery(delivery)}>
-                      <Badge className={`${getPaymentStatusColor(delivery.paymentStatus)} text-white`}>
-                        {delivery.paymentStatus}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreHorizontal className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuLabel>Quick Actions</DropdownMenuLabel>
-                          <DropdownMenuItem onClick={() => handleViewDelivery(delivery)}>
-                            <Eye className="w-4 h-4 mr-2" />
-                            View Details
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleAssignRider(delivery)}>
-                            <User className="w-4 h-4 mr-2" />
-                            Assign Rider
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleReschedule(delivery)}>
-                            <Calendar className="w-4 h-4 mr-2" />
-                            Reschedule
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handlePrintDeliveryNote(delivery)}>
-                            <Printer className="w-4 h-4 mr-2" />
-                            Print Note
-                          </DropdownMenuItem>
-                          <DropdownMenuSeparator />
-                          <DropdownMenuItem onClick={() => handleUpdateStatus(delivery.id, 'out_for_delivery')}>
-                            <Truck className="w-4 h-4 mr-2" />
-                            Mark Out for Delivery
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleUpdateStatus(delivery.id, 'delivered')}>
-                            <CheckCircle className="w-4 h-4 mr-2" />
-                            Mark Delivered
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleUpdateStatus(delivery.id, 'failed')}>
-                            <XCircle className="w-4 h-4 mr-2" />
-                            Mark Failed
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
+          {/* Riders Table */}
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Rider</TableHead>
+                    <TableHead>Contact</TableHead>
+                    <TableHead>Vehicle</TableHead>
+                    <TableHead>Zone</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Deliveries</TableHead>
+                    <TableHead>Rating</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
+                </TableHeader>
+                <TableBody>
+                  {ridersLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8">
+                        <Loader2 className="w-6 h-6 animate-spin mx-auto text-orange-500" />
+                      </TableCell>
+                    </TableRow>
+                  ) : riders.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center py-8">
+                        <Users className="w-12 h-12 mx-auto text-muted-foreground mb-3" />
+                        <p className="text-lg font-medium">No riders found</p>
+                        <p className="text-sm text-muted-foreground">
+                          Add your first rider to get started
+                        </p>
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    riders.map((rider) => (
+                      <TableRow key={rider.id}>
+                        <TableCell>
+                          <div className="flex items-center gap-3">
+                            <Avatar className="h-8 w-8">
+                              <AvatarFallback className="bg-gradient-to-br from-orange-500 to-red-500 text-white text-xs">
+                                {getInitials(rider.name)}
+                              </AvatarFallback>
+                            </Avatar>
+                            <div>
+                              <p className="font-medium">{rider.name}</p>
+                              {rider.national_id && (
+                                <p className="text-xs text-muted-foreground">ID: {rider.national_id}</p>
+                              )}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-1 text-sm">
+                              <Phone className="w-3 h-3" />
+                              <span>{rider.phone}</span>
+                            </div>
+                            {rider.email && (
+                              <div className="flex items-center gap-1 text-sm">
+                                <Mail className="w-3 h-3" />
+                                <span className="text-xs">{rider.email}</span>
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {getVehicleIcon(rider.vehicle_type)}
+                            <span className="capitalize">{rider.vehicle_type}</span>
+                            {rider.vehicle_plate && (
+                              <Badge variant="outline" className="text-xs font-mono">
+                                {rider.vehicle_plate}
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {rider.zone_name ? (
+                            <Badge variant="outline">{rider.zone_name}</Badge>
+                          ) : (
+                            <span className="text-muted-foreground">Unassigned</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={`${getRiderStatusColor(rider.status)} text-white`}>
+                            {rider.status === 'on_delivery' ? 'On Delivery' : rider.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <p className="font-medium">{rider.total_deliveries} total</p>
+                            {rider.active_deliveries ? (
+                              <p className="text-xs text-blue-600">{rider.active_deliveries} active</p>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">No active deliveries</p>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {renderStars(rider.rating)}
+                            <span className="text-xs text-muted-foreground">
+                              ({rider.rating.toFixed(1)})
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon" disabled={updating}>
+                                <MoreHorizontal className="w-4 h-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                              <DropdownMenuItem onClick={() => handleEditRider(rider)}>
+                                <Edit className="w-4 h-4 mr-2" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleToggleRiderStatus(rider)}>
+                                {rider.status === 'active' ? (
+                                  <>
+                                    <Zap className="w-4 h-4 mr-2" />
+                                    Mark On Delivery
+                                  </>
+                                ) : rider.status === 'on_delivery' ? (
+                                  <>
+                                    <PowerOff className="w-4 h-4 mr-2" />
+                                    Mark Inactive
+                                  </>
+                                ) : (
+                                  <>
+                                    <Power className="w-4 h-4 mr-2" />
+                                    Activate
+                                  </>
+                                )}
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem 
+                                className="text-red-600"
+                                onClick={() => {
+                                  setSelectedItem(rider);
+                                  setShowDeleteDialog(true);
+                                }}
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    ))
+                  )}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
 
-      {/* Pagination */}
-      {filteredDeliveries.length > 0 && (
-        <div className="flex items-center justify-between">
-          <p className="text-sm text-muted-foreground">
-            Page {currentPage} of {totalPages}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-              disabled={currentPage === 1}
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="outline"
-              size="icon"
-              onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-              disabled={currentPage === totalPages}
-            >
-              <ChevronRight className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-      )}
+          {/* Pagination - Riders */}
+          {riderTotalPages > 1 && (
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-muted-foreground">
+                Page {riderPage} of {riderTotalPages}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setRiderPage(p => Math.max(1, p - 1))}
+                  disabled={riderPage === 1}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={() => setRiderPage(p => Math.min(riderTotalPages, p + 1))}
+                  disabled={riderPage === riderTotalPages}
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
 
       {/* Assign Rider Dialog */}
       <Dialog open={showAssignRiderDialog} onOpenChange={setShowAssignRiderDialog}>
@@ -988,7 +1157,7 @@ const SubscriptionDeliveries = () => {
           <DialogHeader>
             <DialogTitle>Assign Rider</DialogTitle>
             <DialogDescription>
-              {selectedDelivery && `Assign a rider for delivery #${selectedDelivery.deliveryNumber}`}
+              {selectedDelivery && `Assign a rider for delivery #${selectedDelivery.delivery_number}`}
             </DialogDescription>
           </DialogHeader>
           
@@ -996,35 +1165,46 @@ const SubscriptionDeliveries = () => {
             <div className="space-y-2">
               <Label>Select Rider</Label>
               <Select 
-                value={riderForm.riderId} 
+                value={selectedDelivery?.rider_id || ''} 
                 onValueChange={(value) => {
-                  const rider = riders.find(r => r.id === value);
-                  setRiderForm({
-                    ...riderForm,
-                    riderId: value,
-                    riderName: rider?.name || '',
-                    riderPhone: rider?.phone || ''
-                  });
+                  if (selectedDelivery) {
+                    const rider = riders.find(r => r.id === value);
+                    setSelectedDelivery({
+                      ...selectedDelivery,
+                      rider_id: value,
+                      rider_name: rider?.name,
+                      rider_phone: rider?.phone
+                    });
+                  }
                 }}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Choose a rider" />
                 </SelectTrigger>
                 <SelectContent>
-                  {riders.map(rider => (
-                    <SelectItem key={rider.id} value={rider.id}>
-                      {rider.name} ({rider.activeDeliveries} active)
-                    </SelectItem>
-                  ))}
+                  {riders
+                    .filter(r => r.status === 'active' || r.status === 'on_delivery')
+                    .map(rider => (
+                      <SelectItem key={rider.id} value={rider.id}>
+                        {rider.name} ({rider.vehicle_type}) - {rider.total_deliveries} deliveries
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
-              <Label>Tracking Number</Label>
+              <Label>Tracking Number (Optional)</Label>
               <Input
-                value={riderForm.trackingNumber}
-                onChange={(e) => setRiderForm({...riderForm, trackingNumber: e.target.value})}
+                value={selectedDelivery?.tracking_number || ''}
+                onChange={(e) => {
+                  if (selectedDelivery) {
+                    setSelectedDelivery({
+                      ...selectedDelivery,
+                      tracking_number: e.target.value
+                    });
+                  }
+                }}
                 placeholder="e.g., TRK123456"
               />
             </div>
@@ -1034,209 +1214,188 @@ const SubscriptionDeliveries = () => {
             <Button variant="outline" onClick={() => setShowAssignRiderDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleAssignRiderSubmit}>
+            <Button onClick={handleAssignRider} disabled={!selectedDelivery?.rider_id}>
               Assign Rider
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Reschedule Dialog */}
-      <Dialog open={showRescheduleDialog} onOpenChange={setShowRescheduleDialog}>
-        <DialogContent>
+      {/* Rider Create/Edit Dialog */}
+      <Dialog open={showRiderDialog} onOpenChange={(open) => {
+        if (!open) {
+          setShowRiderDialog(false);
+          resetRiderForm();
+        }
+      }}>
+        <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Reschedule Delivery</DialogTitle>
+            <DialogTitle>{editingRider ? 'Edit Rider' : 'Create New Rider'}</DialogTitle>
             <DialogDescription>
-              {selectedDelivery && `Change delivery date for #${selectedDelivery.deliveryNumber}`}
+              {editingRider ? 'Edit the rider details' : 'Add a new delivery rider'}
             </DialogDescription>
           </DialogHeader>
           
-          <div className="space-y-4 py-4">
+          <div className="grid grid-cols-2 gap-4 py-4">
             <div className="space-y-2">
-              <Label>New Delivery Date *</Label>
+              <Label htmlFor="name">Full Name *</Label>
               <Input
-                type="date"
-                value={rescheduleForm.newDate}
-                onChange={(e) => setRescheduleForm({...rescheduleForm, newDate: e.target.value})}
-                min={new Date().toISOString().split('T')[0]}
+                id="name"
+                value={riderForm.name}
+                onChange={(e) => setRiderForm({...riderForm, name: e.target.value})}
+                placeholder="John Doe"
               />
             </div>
 
             <div className="space-y-2">
-              <Label>New Delivery Time</Label>
+              <Label htmlFor="phone">Phone Number *</Label>
               <Input
-                type="time"
-                value={rescheduleForm.newTime}
-                onChange={(e) => setRescheduleForm({...rescheduleForm, newTime: e.target.value})}
+                id="phone"
+                value={riderForm.phone}
+                onChange={(e) => setRiderForm({...riderForm, phone: e.target.value})}
+                placeholder="+265 991 234 567"
               />
             </div>
 
             <div className="space-y-2">
-              <Label>Reason for Rescheduling</Label>
+              <Label htmlFor="email">Email</Label>
+              <Input
+                id="email"
+                type="email"
+                value={riderForm.email}
+                onChange={(e) => setRiderForm({...riderForm, email: e.target.value})}
+                placeholder="rider@example.com"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="national_id">National ID</Label>
+              <Input
+                id="national_id"
+                value={riderForm.national_id}
+                onChange={(e) => setRiderForm({...riderForm, national_id: e.target.value})}
+                placeholder="MW-1234567"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="vehicle_type">Vehicle Type</Label>
+              <Select 
+                value={riderForm.vehicle_type} 
+                onValueChange={(value: any) => setRiderForm({...riderForm, vehicle_type: value})}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {vehicleTypeOptions.map(option => (
+                    <SelectItem key={option.value} value={option.value}>
+                      <div className="flex items-center gap-2">
+                        <option.icon className="w-4 h-4" />
+                        {option.label}
+                      </div>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="vehicle_plate">Vehicle Plate</Label>
+              <Input
+                id="vehicle_plate"
+                value={riderForm.vehicle_plate}
+                onChange={(e) => setRiderForm({...riderForm, vehicle_plate: e.target.value})}
+                placeholder="AB 1234"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="zone">Assigned Zone</Label>
+              <Select 
+                value={riderForm.zone_id?.toString() || ''} 
+                onValueChange={(value) => setRiderForm({...riderForm, zone_id: value ? parseInt(value) : null})}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select zone" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">No Zone</SelectItem>
+                  {deliveryZones.map(zone => (
+                    <SelectItem key={zone.id} value={zone.id.toString()}>
+                      {zone.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="status">Status</Label>
+              <Select 
+                value={riderForm.status} 
+                onValueChange={(value: any) => setRiderForm({...riderForm, status: value})}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="on_delivery">On Delivery</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="col-span-2 space-y-2">
+              <Label htmlFor="notes">Notes</Label>
               <Textarea
-                value={rescheduleForm.reason}
-                onChange={(e) => setRescheduleForm({...rescheduleForm, reason: e.target.value})}
-                placeholder="e.g., Customer request, rider unavailable..."
+                id="notes"
+                value={riderForm.notes}
+                onChange={(e) => setRiderForm({...riderForm, notes: e.target.value})}
+                placeholder="Additional information about the rider..."
                 rows={3}
               />
             </div>
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRescheduleDialog(false)}>
+            <Button variant="outline" onClick={() => setShowRiderDialog(false)}>
               Cancel
             </Button>
-            <Button onClick={handleRescheduleSubmit}>
-              Reschedule Delivery
+            <Button 
+              onClick={editingRider ? handleUpdateRider : handleCreateRider}
+              disabled={updating}
+            >
+              {updating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {editingRider ? 'Update Rider' : 'Create Rider'}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      {/* Delivery Details Dialog */}
-      <Dialog open={showDeliveryDetails} onOpenChange={setShowDeliveryDetails}>
-        <DialogContent className="max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Delivery Details</DialogTitle>
-            <DialogDescription>
-              {selectedDelivery && `Delivery #${selectedDelivery.deliveryNumber}`}
-            </DialogDescription>
-          </DialogHeader>
-
-          {selectedDelivery && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p className="text-sm text-muted-foreground">Status</p>
-                  <Badge className={`${getStatusColor(selectedDelivery.status)} text-white mt-1`}>
-                    {selectedDelivery.status.replace(/_/g, ' ')}
-                  </Badge>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Payment Status</p>
-                  <Badge className={`${getPaymentStatusColor(selectedDelivery.paymentStatus)} text-white mt-1`}>
-                    {selectedDelivery.paymentStatus}
-                  </Badge>
-                </div>
-              </div>
-
-              <Separator />
-
-              <div>
-                <h3 className="font-semibold mb-2">Customer Information</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Name</p>
-                    <p className="font-medium">{selectedDelivery.customerName}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Phone</p>
-                    <p className="font-medium">{selectedDelivery.customerPhone}</p>
-                  </div>
-                  <div className="col-span-2">
-                    <p className="text-sm text-muted-foreground">Address</p>
-                    <p className="font-medium">{selectedDelivery.customerAddress}</p>
-                  </div>
-                </div>
-              </div>
-
-              <Separator />
-
-              <div>
-                <h3 className="font-semibold mb-2">Delivery Information</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <p className="text-sm text-muted-foreground">Scheduled Date</p>
-                    <p className="font-medium">{format(new Date(selectedDelivery.scheduledDate), 'PPP')}</p>
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">Scheduled Time</p>
-                    <p className="font-medium">{selectedDelivery.scheduledTime || 'Anytime'}</p>
-                  </div>
-                  {selectedDelivery.actualDeliveryDate && (
-                    <>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Actual Date</p>
-                        <p className="font-medium">{format(new Date(selectedDelivery.actualDeliveryDate), 'PPP')}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Actual Time</p>
-                        <p className="font-medium">{selectedDelivery.actualDeliveryTime || 'N/A'}</p>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              {selectedDelivery.riderName && (
-                <>
-                  <Separator />
-                  <div>
-                    <h3 className="font-semibold mb-2">Rider Information</h3>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <p className="text-sm text-muted-foreground">Name</p>
-                        <p className="font-medium">{selectedDelivery.riderName}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm text-muted-foreground">Phone</p>
-                        <p className="font-medium">{selectedDelivery.riderPhone}</p>
-                      </div>
-                      {selectedDelivery.trackingNumber && (
-                        <div className="col-span-2">
-                          <p className="text-sm text-muted-foreground">Tracking Number</p>
-                          <p className="font-medium font-mono">{selectedDelivery.trackingNumber}</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {selectedDelivery.deliveryNotes && (
-                <>
-                  <Separator />
-                  <div>
-                    <p className="text-sm text-muted-foreground">Delivery Notes</p>
-                    <p className="text-sm mt-1 p-3 bg-muted/50 rounded-lg">{selectedDelivery.deliveryNotes}</p>
-                  </div>
-                </>
-              )}
-
-              {selectedDelivery.confirmedByCustomer && (
-                <div className="bg-green-50 dark:bg-green-950/30 p-3 rounded-lg">
-                  <p className="text-sm text-green-600 dark:text-green-400">
-                    ✓ Confirmed by customer at {selectedDelivery.confirmationTime && 
-                      format(new Date(selectedDelivery.confirmationTime), 'p')}
-                  </p>
-                  {selectedDelivery.rating && (
-                    <div className="flex items-center gap-1 mt-2">
-                      {Array.from({ length: 5 }).map((_, i) => (
-                        <span key={i} className={i < selectedDelivery.rating! ? 'text-yellow-400' : 'text-gray-300'}>
-                          ★
-                        </span>
-                      ))}
-                      <span className="text-sm ml-2">{selectedDelivery.feedback}</span>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowDeliveryDetails(false)}>
-              Close
-            </Button>
-            {selectedDelivery && (
-              <Button onClick={() => handlePrintDeliveryNote(selectedDelivery)}>
-                <Printer className="w-4 h-4 mr-2" />
-                Print Note
-              </Button>
-            )}
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently delete {selectedItem?.name}. 
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction 
+              onClick={handleDeleteRider}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {updating ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 };

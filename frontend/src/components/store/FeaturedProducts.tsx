@@ -38,9 +38,12 @@ const getImageUrl = (filename: string): string => {
 const processProductImages = (product: Product): Product => {
   if (!product) return product;
 
+  // Create a copy to avoid mutating the original
+  const processedProduct = { ...product };
+
   // Process images array
-  if (product.images && Array.isArray(product.images)) {
-    product.images = product.images.map(img => {
+  if (processedProduct.images && Array.isArray(processedProduct.images)) {
+    processedProduct.images = processedProduct.images.map(img => {
       let filename = '';
       
       if (typeof img === 'string') {
@@ -57,7 +60,7 @@ const processProductImages = (product: Product): Product => {
     });
   }
 
-  return product;
+  return processedProduct;
 };
 
 // Fallback empty array to prevent errors
@@ -180,7 +183,8 @@ const FeaturedProducts = () => {
                 className="animate-fade-in"
                 style={{ animationDelay: `${index * 50}ms` }}
               >
-                <ProductCard {...product} />
+                {/* FIX: Pass the product as a prop object, not spread */}
+                <ProductCard product={product} />
               </div>
             ))}
           </div>

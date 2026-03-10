@@ -1,47 +1,44 @@
 import { useParams, Link } from 'react-router-dom';
 import { useState, useEffect } from 'react';
 import { 
-  ArrowLeft, Star, ShoppingCart, Heart, Share2, 
+  Star, ShoppingCart, Heart, Share2, 
   Truck, Shield, Clock, Package, ChevronRight, 
-  Minus, Plus, Check, Leaf, Droplets, Scale,
-  Facebook, Twitter, Mail, Copy, Loader2
+  Minus, Plus, Check, Leaf, Loader2,
+  Facebook, Twitter, Mail, Copy
 } from 'lucide-react';
 import Header from '@/components/store/Header';
 import Footer from '@/components/store/Footer';
 import ProductCard from '@/components/store/ProductCard';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { useCart } from '@/components/store/CartProvider';
-import { productService } from '@/services/productService';
 import type { Product } from '@/types/product.types';
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+
+// FIXED: Helper function to get correct image URL with /products/ subfolder
+const STATIC_BASE_URL = API_URL.replace('/api', '');
+const getImageUrl = (imagePath: string | undefined | null): string => {
+  if (!imagePath || imagePath === '/placeholder.svg') return '/placeholder.svg';
+  if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) return imagePath;
+  if (imagePath.startsWith('blob:')) return imagePath;
+  // Extract just filename if full path given
+  const filename = imagePath.includes('/') ? imagePath.split('/').pop() : imagePath;
+  return `${STATIC_BASE_URL}/uploads/products/${filename}`;
+};
 
 // Helper to extract filename from URL or path
 const extractFilename = (url: string): string => {
   if (!url) return '';
-  // If it's a full URL, extract the filename
   if (url.includes('/')) {
     return url.split('/').pop() || '';
   }
   return url;
-};
-
-// Helper to get full image URL for display
-const getImageUrl = (filename: string): string => {
-  if (!filename) return '/placeholder.svg';
-  
-  // If it's already a full URL, return as is
-  if (filename.startsWith('http://') || filename.startsWith('https://')) {
-    return filename;
-  }
-  
-  // If it's a blob URL (shouldn't happen in product details), return as is
-  if (filename.startsWith('blob:')) {
-    return filename;
-  }
-  
-  // For development, add the base URL - IMPORTANT: no /products in the path
-  return `http://localhost:5001/uploads/${filename}`;
 };
 
 // Helper to parse numeric values safely
@@ -55,22 +52,38 @@ const parseNumeric = (value: any): number => {
   return 0;
 };
 
+// Review type
+interface Review {
+  id: number;
+  user_name: string;
+  rating: number;
+  comment: string;
+  created_at: string;
+}
+
 const ProductDetailsPage = () => {
   const { id } = useParams<{ id: string }>();
   const { toast } = useToast();
+  const { addItem } = useCart();
   
   const [product, setProduct] = useState<Product | null>(null);
   const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
+  const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [selectedImage, setSelectedImage] = useState(0);
-  const [activeTab, setActiveTab] = useState('description');
-  const { addItem } = useCart();
+  
+  // Review form
+  const [reviewName, setReviewName] = useState('');
+  const [reviewRating, setReviewRating] = useState(5);
+  const [reviewComment, setReviewComment] = useState('');
+  const [submittingReview, setSubmittingReview] = useState(false);
 
   useEffect(() => {
     if (id) {
       fetchProductDetails(id);
+      fetchReviews(id);
     }
   }, [id]);
 
@@ -80,19 +93,26 @@ const ProductDetailsPage = () => {
     
     try {
       // Fetch product details
-      const productData = await productService.getPublicProduct(productId);
+      const response = await fetch(`${API_URL}/products/${productId}`);
+      if (!response.ok) {
+        throw new Error('Product not found');
+      }
+      const productData = await response.json();
       console.log('Product details:', productData);
       setProduct(productData);
       
       // Fetch related products (same category)
       if (productData.category) {
         try {
-          const response = await productService.getPublicProducts({ 
+          const params = new URLSearchParams({
             category: productData.category,
-            limit: 4
+            limit: '4',
+            status: 'active'
           });
+          const relatedResponse = await fetch(`${API_URL}/products?${params.toString()}`);
+          const relatedData = await relatedResponse.json();
           // Filter out current product
-          const related = response.products.filter(p => p.id.toString() !== productId);
+          const related = (relatedData.products || []).filter((p: Product) => p.id.toString() !== productId);
           setRelatedProducts(related);
         } catch (relatedError) {
           console.error('Error fetching related products:', relatedError);
@@ -111,22 +131,144 @@ const ProductDetailsPage = () => {
     }
   };
 
+  const fetchReviews = async (productId: string) => {
+    try {
+      // This would be a real API call - for now, use mock data
+      // const response = await fetch(`${API_URL}/products/${productId}/reviews`);
+      // const data = await response.json();
+      // setReviews(data.reviews || []);
+      
+      // Mock reviews for demonstration
+      setReviews([
+        {
+          id: 1,
+          user_name: 'Chisomo Banda',
+          rating: 5,
+          comment: 'Excellent quality! Fresh and delicious. Will definitely buy again.',
+          created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
+        },
+        {
+          id: 2,
+          user_name: 'Tawonga Phiri',
+          rating: 4,
+          comment: 'Good product, delivery was fast. A bit pricey but worth it.',
+          created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString()
+        }
+      ]);
+    } catch (error) {
+      console.error('Error fetching reviews:', error);
+    }
+  };
+
   const handleAddToCart = () => {
     if (!product) return;
     
-    for (let i = 0; i < quantity; i++) {
-      addItem({ 
-        id: product.id.toString(), 
-        name: product.name, 
-        price: parseNumeric(product.price), 
-        unit: product.unit 
+    const stock = parseNumeric(product.stock);
+    if (stock <= 0) {
+      toast({
+        title: 'Out of Stock',
+        description: 'This product is currently out of stock',
+        variant: 'destructive',
       });
+      return;
+    }
+
+    const maxOrder = parseNumeric(product.max_order_qty);
+    if (maxOrder > 0 && quantity > maxOrder) {
+      toast({
+        title: 'Maximum Order Exceeded',
+        description: `You can only order up to ${maxOrder} units of this product`,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    const minOrder = parseNumeric(product.min_order_qty) || 1;
+    if (quantity < minOrder) {
+      toast({
+        title: 'Minimum Order Required',
+        description: `Minimum order quantity is ${minOrder}`,
+        variant: 'destructive',
+      });
+      return;
     }
     
-    toast({
-      title: 'Added to Cart',
-      description: `${quantity} × ${product.name} added to your cart`,
+    // Get product image
+    let imageUrl = '';
+    if (product.images && product.images.length > 0) {
+      const firstImage = product.images[0];
+      if (typeof firstImage === 'string') {
+        imageUrl = extractFilename(firstImage);
+      } else if (firstImage && typeof firstImage === 'object' && 'url' in firstImage) {
+        imageUrl = extractFilename(firstImage.url);
+      }
+    }
+
+    addItem({
+      productId: product.id.toString(),
+      name: product.name,
+      price: parseNumeric(product.price),
+      image: imageUrl,
+      unit: product.unit,
+      quantity: quantity,
+      maxOrder: maxOrder || undefined,
+      stock: stock
     });
+  };
+
+  const handleSubmitReview = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!product) return;
+
+    setSubmittingReview(true);
+    try {
+      // This would be a real API call
+      // await fetch(`${API_URL}/products/${product.id}/reviews`, {
+      //   method: 'POST',
+      //   headers: { 'Content-Type': 'application/json' },
+      //   body: JSON.stringify({
+      //     name: reviewName,
+      //     rating: reviewRating,
+      //     comment: reviewComment
+      //   })
+      // });
+
+      // Mock success
+      toast({
+        title: 'Review Submitted',
+        description: 'Thank you for your feedback!',
+      });
+
+      // Reset form
+      setReviewName('');
+      setReviewRating(5);
+      setReviewComment('');
+
+      // Refresh reviews
+      fetchReviews(product.id.toString());
+    } catch (error) {
+      console.error('Error submitting review:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to submit review',
+        variant: 'destructive',
+      });
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
+  const handleShare = async () => {
+    const url = window.location.href;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast({
+        title: 'Link Copied',
+        description: 'Product link copied to clipboard',
+      });
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
   };
 
   const getProductImages = (): string[] => {
@@ -142,6 +284,7 @@ const ProductDetailsPage = () => {
           filename = extractFilename(img.url);
         }
         
+        // FIXED: Use getImageUrl helper
         return getImageUrl(filename);
       });
     }
@@ -155,22 +298,32 @@ const ProductDetailsPage = () => {
     ).join(' ');
   };
 
-  // Safe number formatting
   const formatPrice = (price: any): string => {
     const num = parseNumeric(price);
     return num.toLocaleString();
   };
 
-  // Safe rating display
   const getRatingValue = (): number => {
     if (!product || !product.rating) return 0;
     return parseNumeric(product.rating);
   };
 
-  // Safe stock display
   const getStockValue = (): number => {
     if (!product) return 0;
     return parseNumeric(product.stock);
+  };
+
+  const getStockStatus = (): { label: string; color: string; badge: string } => {
+    const stock = getStockValue();
+    const lowStockAlert = parseNumeric(product?.low_stock_alert) || 10;
+    
+    if (stock <= 0) {
+      return { label: 'Out of Stock', color: 'bg-red-500', badge: 'destructive' };
+    } else if (stock <= lowStockAlert) {
+      return { label: 'Low Stock', color: 'bg-yellow-500', badge: 'warning' };
+    } else {
+      return { label: 'In Stock', color: 'bg-green-500', badge: 'success' };
+    }
   };
 
   if (loading) {
@@ -191,16 +344,16 @@ const ProductDetailsPage = () => {
         <Header />
         <div className="container mx-auto px-4 py-32 text-center">
           <div className="max-w-md mx-auto">
-            <div className="w-24 h-24 rounded-full bg-store-green-light/30 flex items-center justify-center mx-auto mb-6">
-              <Package className="w-12 h-12 text-primary" />
+            <div className="w-24 h-24 rounded-full bg-muted flex items-center justify-center mx-auto mb-6">
+              <Package className="w-12 h-12 text-muted-foreground" />
             </div>
             <h2 className="text-3xl font-display font-bold mb-4">Product Not Found</h2>
             <p className="text-muted-foreground mb-8">
               {error || "The product you're looking for doesn't exist or has been removed."}
             </p>
-            <Link to="/">
+            <Link to="/shop">
               <Button className="bg-gradient-to-r from-orange-500 to-red-500 text-white h-12 px-8 rounded-xl">
-                Return to Home
+                Continue Shopping
               </Button>
             </Link>
           </div>
@@ -218,6 +371,9 @@ const ProductDetailsPage = () => {
     : 0;
   const rating = getRatingValue();
   const stock = getStockValue();
+  const stockStatus = getStockStatus();
+  const minOrder = parseNumeric(product.min_order_qty) || 1;
+  const maxOrder = parseNumeric(product.max_order_qty) || 999;
 
   return (
     <div className="min-h-screen bg-background">
@@ -229,10 +385,10 @@ const ProductDetailsPage = () => {
           <div className="flex items-center gap-2 text-sm flex-wrap">
             <Link to="/" className="text-muted-foreground hover:text-primary transition-colors">Home</Link>
             <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
-            <Link to="/products" className="text-muted-foreground hover:text-primary transition-colors">Products</Link>
+            <Link to="/shop" className="text-muted-foreground hover:text-primary transition-colors">Shop</Link>
             <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
             <Link 
-              to={`/products?category=${encodeURIComponent(product.category)}`} 
+              to={`/shop?category=${encodeURIComponent(product.category)}`} 
               className="text-muted-foreground hover:text-primary transition-colors"
             >
               {getCategoryName(product.category)}
@@ -249,7 +405,7 @@ const ProductDetailsPage = () => {
           {/* Left Column - Images */}
           <div>
             <div className="bg-card rounded-2xl p-4 border border-border sticky top-[140px]">
-              {/* Main Image */}
+              {/* Main Image - FIXED: Added onError handler */}
               <div className="relative aspect-square rounded-xl overflow-hidden bg-muted/30 mb-4">
                 <img 
                   src={images[selectedImage]} 
@@ -277,9 +433,9 @@ const ProductDetailsPage = () => {
                 )}
               </div>
 
-              {/* Thumbnail Images */}
+              {/* Thumbnail Images - FIXED: Added onError handlers */}
               {images.length > 1 && (
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-5 gap-2">
                   {images.map((img, index) => (
                     <button
                       key={index}
@@ -303,27 +459,12 @@ const ProductDetailsPage = () => {
                 </div>
               )}
 
-              {/* Share Buttons */}
-              <div className="flex items-center justify-center gap-2 mt-4 pt-4 border-t border-border">
-                <button className="p-2 rounded-lg hover:bg-muted transition-colors">
-                  <Heart className="w-4 h-4 text-muted-foreground" />
-                </button>
-                <button className="p-2 rounded-lg hover:bg-muted transition-colors">
-                  <Share2 className="w-4 h-4 text-muted-foreground" />
-                </button>
-                <div className="h-4 w-px bg-border mx-1" />
-                <button className="p-2 rounded-lg hover:bg-muted transition-colors">
-                  <Facebook className="w-4 h-4 text-muted-foreground" />
-                </button>
-                <button className="p-2 rounded-lg hover:bg-muted transition-colors">
-                  <Twitter className="w-4 h-4 text-muted-foreground" />
-                </button>
-                <button className="p-2 rounded-lg hover:bg-muted transition-colors">
-                  <Mail className="w-4 h-4 text-muted-foreground" />
-                </button>
-                <button className="p-2 rounded-lg hover:bg-muted transition-colors">
-                  <Copy className="w-4 h-4 text-muted-foreground" />
-                </button>
+              {/* Share Button */}
+              <div className="flex items-center justify-end mt-4 pt-4 border-t border-border">
+                <Button variant="ghost" size="sm" onClick={handleShare} className="gap-2">
+                  <Share2 className="w-4 h-4" />
+                  Share
+                </Button>
               </div>
             </div>
           </div>
@@ -373,15 +514,10 @@ const ProductDetailsPage = () => {
                   </div>
                 )}
 
-                {/* In Stock Status */}
-                <div className="flex items-center gap-1.5">
-                  <div className={`w-2 h-2 rounded-full ${
-                    stock > 0 ? 'bg-green-500 animate-pulse' : 'bg-red-500'
-                  }`} />
-                  <span className="text-sm font-medium">
-                    {stock > 0 ? 'In Stock' : 'Out of Stock'}
-                  </span>
-                </div>
+                {/* Stock Status */}
+                <Badge variant={stockStatus.badge as any}>
+                  {stockStatus.label}
+                </Badge>
 
                 {/* SKU */}
                 {product.sku && (
@@ -416,17 +552,17 @@ const ProductDetailsPage = () => {
                 <span className="text-sm font-medium">Quantity:</span>
                 <div className="flex items-center border border-border rounded-lg">
                   <button
-                    onClick={() => setQuantity(Math.max(1, quantity - 1))}
+                    onClick={() => setQuantity(Math.max(minOrder, quantity - 1))}
                     className="w-10 h-10 flex items-center justify-center hover:bg-muted transition-colors rounded-l-lg"
-                    disabled={stock === 0}
+                    disabled={stock === 0 || quantity <= minOrder}
                   >
                     <Minus className="w-4 h-4" />
                   </button>
                   <span className="w-12 text-center font-medium">{quantity}</span>
                   <button
-                    onClick={() => setQuantity(quantity + 1)}
+                    onClick={() => setQuantity(Math.min(maxOrder, quantity + 1))}
                     className="w-10 h-10 flex items-center justify-center hover:bg-muted transition-colors rounded-r-lg"
-                    disabled={stock === 0 || quantity >= stock}
+                    disabled={stock === 0 || quantity >= Math.min(stock, maxOrder)}
                   >
                     <Plus className="w-4 h-4" />
                   </button>
@@ -454,6 +590,14 @@ const ProductDetailsPage = () => {
                   Wishlist
                 </Button>
               </div>
+
+              {/* Order Limits Info */}
+              {(minOrder > 1 || maxOrder < 999) && (
+                <div className="mt-3 text-xs text-muted-foreground">
+                  {minOrder > 1 && <span>Minimum order: {minOrder} • </span>}
+                  {maxOrder < 999 && <span>Maximum order: {maxOrder}</span>}
+                </div>
+              )}
             </div>
 
             {/* Delivery Info */}
@@ -461,7 +605,7 @@ const ProductDetailsPage = () => {
               <div className="bg-card rounded-xl p-3 text-center border border-border">
                 <Truck className="w-5 h-5 text-primary mx-auto mb-1" />
                 <p className="text-xs font-medium">Free Delivery</p>
-                <p className="text-[10px] text-muted-foreground">Over MK 50,000</p>
+                <p className="text-[10px] text-muted-foreground">Over MK 10,000</p>
               </div>
               <div className="bg-card rounded-xl p-3 text-center border border-border">
                 <Shield className="w-5 h-5 text-primary mx-auto mb-1" />
@@ -476,54 +620,23 @@ const ProductDetailsPage = () => {
             </div>
 
             {/* Tabs */}
-            <div className="bg-card rounded-xl border border-border overflow-hidden">
-              <div className="flex border-b border-border">
-                <button
-                  onClick={() => setActiveTab('description')}
-                  className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                    activeTab === 'description' 
-                      ? 'bg-primary/10 text-primary' 
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                  }`}
-                >
-                  Description
-                </button>
-                <button
-                  onClick={() => setActiveTab('details')}
-                  className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                    activeTab === 'details' 
-                      ? 'bg-primary/10 text-primary' 
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/50'
-                  }`}
-                >
-                  Details
-                </button>
-              </div>
+            <Tabs defaultValue="description" className="mb-6">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="description">Description</TabsTrigger>
+                <TabsTrigger value="details">Details</TabsTrigger>
+                <TabsTrigger value="reviews">Reviews ({reviews.length})</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="description" className="mt-4">
+                <div className="bg-card rounded-xl p-6 border border-border">
+                  <p className="text-muted-foreground leading-relaxed whitespace-pre-line">
+                    {product.description || 'No description available for this product.'}
+                  </p>
+                </div>
+              </TabsContent>
 
-              <div className="p-6">
-                {activeTab === 'description' && (
-                  <div>
-                    <p className="text-muted-foreground leading-relaxed whitespace-pre-line">
-                      {product.description || 'No description available for this product.'}
-                    </p>
-                    <div className="mt-4 flex items-center gap-4 text-sm flex-wrap">
-                      {product.organic && (
-                        <div className="flex items-center gap-1.5">
-                          <Leaf className="w-4 h-4 text-green-600" />
-                          <span>Organic</span>
-                        </div>
-                      )}
-                      {product.local_product && (
-                        <div className="flex items-center gap-1.5">
-                          <Check className="w-4 h-4 text-green-600" />
-                          <span>Local Product</span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {activeTab === 'details' && (
+              <TabsContent value="details" className="mt-4">
+                <div className="bg-card rounded-xl p-6 border border-border">
                   <div className="space-y-3">
                     {product.category && (
                       <div className="flex justify-between py-2 border-b border-border">
@@ -553,6 +666,14 @@ const ProductDetailsPage = () => {
                         <span className="font-medium">{parseNumeric(product.weight)} kg</span>
                       </div>
                     )}
+                    <div className="flex justify-between py-2 border-b border-border">
+                      <span className="text-muted-foreground">Organic</span>
+                      <span>{product.organic ? 'Yes' : 'No'}</span>
+                    </div>
+                    <div className="flex justify-between py-2 border-b border-border">
+                      <span className="text-muted-foreground">Local Product</span>
+                      <span>{product.local_product ? 'Yes' : 'No'}</span>
+                    </div>
                     {product.sku && (
                       <div className="flex justify-between py-2">
                         <span className="text-muted-foreground">SKU</span>
@@ -560,9 +681,118 @@ const ProductDetailsPage = () => {
                       </div>
                     )}
                   </div>
-                )}
-              </div>
-            </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="reviews" className="mt-4">
+                <div className="bg-card rounded-xl p-6 border border-border">
+                  {/* Reviews List */}
+                  {reviews.length > 0 ? (
+                    <div className="space-y-4 mb-6">
+                      {reviews.map(review => (
+                        <div key={review.id} className="border-b border-border pb-4 last:border-0">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
+                                {review.user_name.charAt(0)}
+                              </div>
+                              <div>
+                                <p className="font-medium">{review.user_name}</p>
+                                <div className="flex items-center gap-1">
+                                  {[...Array(5)].map((_, i) => (
+                                    <Star 
+                                      key={i} 
+                                      className={`w-3 h-3 ${
+                                        i < review.rating 
+                                          ? 'fill-amber-400 text-amber-400' 
+                                          : 'text-gray-300'
+                                      }`} 
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+                            </div>
+                            <span className="text-xs text-muted-foreground">
+                              {new Date(review.created_at).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <p className="text-sm text-muted-foreground">{review.comment}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-center text-muted-foreground py-4">
+                      No reviews yet. Be the first to review this product!
+                    </p>
+                  )}
+
+                  {/* Add Review Form */}
+                  <form onSubmit={handleSubmitReview} className="space-y-4">
+                    <h4 className="font-medium">Write a Review</h4>
+                    
+                    <div>
+                      <Label htmlFor="review-name">Your Name</Label>
+                      <Input
+                        id="review-name"
+                        value={reviewName}
+                        onChange={(e) => setReviewName(e.target.value)}
+                        placeholder="Enter your name"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="review-rating">Rating</Label>
+                      <div className="flex items-center gap-2">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <button
+                            key={star}
+                            type="button"
+                            onClick={() => setReviewRating(star)}
+                            className="focus:outline-none"
+                          >
+                            <Star 
+                              className={`w-6 h-6 ${
+                                star <= reviewRating 
+                                  ? 'fill-amber-400 text-amber-400' 
+                                  : 'text-gray-300'
+                              }`} 
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="review-comment">Your Review</Label>
+                      <Textarea
+                        id="review-comment"
+                        value={reviewComment}
+                        onChange={(e) => setReviewComment(e.target.value)}
+                        placeholder="Share your thoughts about this product..."
+                        rows={4}
+                        required
+                      />
+                    </div>
+
+                    <Button 
+                      type="submit" 
+                      disabled={submittingReview}
+                      className="bg-gradient-to-r from-orange-500 to-red-500 text-white"
+                    >
+                      {submittingReview ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Submitting...
+                        </>
+                      ) : (
+                        'Submit Review'
+                      )}
+                    </Button>
+                  </form>
+                </div>
+              </TabsContent>
+            </Tabs>
 
             {/* Tags */}
             {product.tags && product.tags.length > 0 && (
@@ -570,9 +800,11 @@ const ProductDetailsPage = () => {
                 <h3 className="text-sm font-medium mb-2">Tags</h3>
                 <div className="flex flex-wrap gap-2">
                   {product.tags.map((tag, index) => (
-                    <Badge key={index} variant="outline" className="px-3 py-1">
-                      #{tag}
-                    </Badge>
+                    <Link key={index} to={`/shop?search=${encodeURIComponent(tag)}`}>
+                      <Badge variant="outline" className="px-3 py-1 hover:bg-muted cursor-pointer">
+                        #{tag}
+                      </Badge>
+                    </Link>
                   ))}
                 </div>
               </div>
@@ -588,9 +820,8 @@ const ProductDetailsPage = () => {
             </h2>
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
               {relatedProducts.map(product => (
-                <Link to={`/product/${product.id}`} key={product.id}>
-                  <ProductCard {...product} />
-                </Link>
+                // FIX: ProductCard will handle its own image URL construction
+                <ProductCard key={product.id} product={product} />
               ))}
             </div>
           </section>

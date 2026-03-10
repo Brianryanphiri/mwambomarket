@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   Plus,
@@ -13,7 +13,14 @@ import {
   RefreshCw,
   ChevronLeft,
   ChevronRight,
-  Package
+  Package,
+  Filter,
+  CheckSquare,
+  Square,
+  AlertTriangle,
+  CheckCircle,
+  XCircle,
+  Star
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -53,6 +60,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import { productService } from '@/services/productService';
 import type { Product } from '@/types/product.types';
@@ -60,29 +74,48 @@ import type { Product } from '@/types/product.types';
 // Helper function to extract filename from URL or path
 const extractFilename = (url: string): string => {
   if (!url) return '';
-  // If it's a full URL, extract the filename
   if (url.includes('/')) {
     return url.split('/').pop() || '';
   }
   return url;
 };
 
-// Helper function to get full image URL for display
+// Helper function to get full image URL for display - FIXED: Added /products/ subfolder
 const getImageUrl = (filename: string): string => {
   if (!filename) return '/placeholder.svg';
-  
-  // If it's already a full URL, return as is
   if (filename.startsWith('http://') || filename.startsWith('https://')) {
     return filename;
   }
-  
-  // If it's a blob URL (shouldn't happen in product list), return as is
   if (filename.startsWith('blob:')) {
     return filename;
   }
-  
-  // For development, add the base URL - IMPORTANT: no /products in the path
-  return `http://localhost:5001/uploads/${filename}`;
+  // FIXED: Added /products/ subfolder in the path
+  return `http://localhost:5001/uploads/products/${filename}`;
+};
+
+// Status badge component
+const StatusBadge = ({ status }: { status: string }) => {
+  switch (status) {
+    case 'active':
+      return <Badge className="bg-green-500">Active</Badge>;
+    case 'draft':
+      return <Badge variant="outline">Draft</Badge>;
+    case 'inactive':
+      return <Badge variant="destructive">Inactive</Badge>;
+    default:
+      return <Badge variant="secondary">{status}</Badge>;
+  }
+};
+
+// Stock badge component
+const StockBadge = ({ stock, lowStockAlert }: { stock: number; lowStockAlert?: number }) => {
+  if (stock <= 0) {
+    return <Badge variant="destructive">Out of Stock</Badge>;
+  } else if (stock <= (lowStockAlert || 10)) {
+    return <Badge className="bg-yellow-500">Low Stock ({stock})</Badge>;
+  } else {
+    return <Badge variant="outline" className="text-green-600 border-green-200 bg-green-50">In Stock ({stock})</Badge>;
+  }
 };
 
 const ProductList = () => {
@@ -91,11 +124,37 @@ const ProductList = () => {
   
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [sortBy, setSortBy] = useState('newest');
+  
+  // Categories
   const [categories, setCategories] = useState<string[]>([]);
+  
+  // Selection
+  const [selectedProducts, setSelectedProducts] = useState<number[]>([]);
+  const [selectAll, setSelectAll] = useState(false);
+  
+  // Delete dialog
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [productToDelete, setProductToDelete] = useState<number | null>(null);
+  const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = useState(false);
+  
+  // Bulk status dialog
+  const [bulkStatusDialogOpen, setBulkStatusDialogOpen] = useState(false);
+  const [bulkStatusAction, setBulkStatusAction] = useState<'active' | 'draft' | 'inactive'>('active');
+  
+  // Stats
+  const [stats, setStats] = useState({
+    total: 0,
+    active: 0,
+    outOfStock: 0,
+    lowStock: 0
+  });
   
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -103,29 +162,61 @@ const ProductList = () => {
   const [totalProducts, setTotalProducts] = useState(0);
   const itemsPerPage = 10;
 
-  useEffect(() => {
-    fetchProducts();
-    fetchCategories();
-  }, [currentPage, searchTerm, categoryFilter]);
+  // FIX: Create a stable filters object using useMemo
+  const filters = useMemo(() => ({
+    search: searchTerm,
+    category: categoryFilter !== 'all' ? categoryFilter : undefined,
+    status: statusFilter !== 'all' ? statusFilter : undefined,
+    sortBy,
+    page: currentPage,
+    limit: itemsPerPage
+  }), [searchTerm, categoryFilter, statusFilter, sortBy, currentPage]);
 
-  const fetchProducts = async () => {
+  // FIX: Use useCallback for fetchProducts to stabilize the function
+  const fetchProducts = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const filters: any = {
-        page: currentPage,
-        limit: itemsPerPage
+      const params: any = {
+        page: filters.page,
+        limit: filters.limit
       };
       
-      if (searchTerm) filters.search = searchTerm;
-      if (categoryFilter !== 'all') filters.category = categoryFilter;
+      if (filters.search) params.search = filters.search;
+      if (filters.category) params.category = filters.category;
+      if (filters.status) params.status = filters.status;
       
-      const response = await productService.getProducts(filters);
+      // Map sortBy to backend sort parameter
+      if (filters.sortBy === 'newest') params.sortBy = 'newest';
+      else if (filters.sortBy === 'oldest') params.sortBy = 'oldest';
+      else if (filters.sortBy === 'price_low') params.sortBy = 'price_asc';
+      else if (filters.sortBy === 'price_high') params.sortBy = 'price_desc';
+      else if (filters.sortBy === 'name_asc') params.sortBy = 'name_asc';
+      else if (filters.sortBy === 'name_desc') params.sortBy = 'name_desc';
+      else if (filters.sortBy === 'stock_low') params.sortBy = 'stock_asc';
+      
+      const response = await productService.getProducts(params);
       console.log('Fetched products:', response.products);
-      setProducts(response.products);
-      setTotalPages(response.totalPages);
-      setTotalProducts(response.total);
+      setProducts(response.products || []);
+      setTotalPages(response.totalPages || 1);
+      setTotalProducts(response.total || 0);
+      
+      // Calculate stats from response
+      const activeCount = (response.products || []).filter(p => p.status === 'active').length;
+      const outOfStockCount = (response.products || []).filter(p => p.stock <= 0).length;
+      const lowStockCount = (response.products || []).filter(p => 
+        p.stock > 0 && p.stock <= (p.low_stock_alert || 10)
+      ).length;
+      
+      setStats({
+        total: response.total || 0,
+        active: activeCount,
+        outOfStock: outOfStockCount,
+        lowStock: lowStockCount
+      });
     } catch (error) {
       console.error('Error fetching products:', error);
+      setError('Failed to fetch products. Please try again.');
       toast({
         title: 'Error',
         description: 'Failed to fetch products',
@@ -134,29 +225,53 @@ const ProductList = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [filters, toast]); // FIX: Depends on stable filters object
 
-  const fetchCategories = async () => {
+  // FIX: Use useCallback for fetchCategories
+  const fetchCategories = useCallback(async () => {
     try {
-      const cats = await productService.getCategories();
-      setCategories(cats.map(c => c.name));
+      const response = await productService.getCategories();
+      setCategories(response.categories?.map((c: any) => c.name) || []);
     } catch (error) {
       console.error('Error fetching categories:', error);
     }
-  };
+  }, []);
 
-  const handleSearch = () => {
-    setCurrentPage(1);
+  // FIX: Fetch products only when filters change, with proper dependencies
+  useEffect(() => {
     fetchProducts();
-  };
+  }, [fetchProducts]); // FIX: Depends on stable fetchProducts function
 
-  const handleRefresh = () => {
+  // Fetch categories on mount
+  useEffect(() => {
+    fetchCategories();
+  }, [fetchCategories]); // FIX: Depends on stable fetchCategories function
+
+  // Handle select all
+  useEffect(() => {
+    if (selectAll) {
+      setSelectedProducts(products.map(p => p.id));
+    } else {
+      setSelectedProducts([]);
+    }
+  }, [selectAll, products]);
+
+  const handleSearch = useCallback(() => {
+    setCurrentPage(1);
+    // fetchProducts will be called automatically via useEffect due to filters change
+  }, []);
+
+  const handleRefresh = useCallback(() => {
     setSearchTerm('');
     setCategoryFilter('all');
+    setStatusFilter('all');
+    setSortBy('newest');
     setCurrentPage(1);
-    fetchProducts();
+    setSelectedProducts([]);
+    setSelectAll(false);
     fetchCategories();
-  };
+    // fetchProducts will be called automatically via useEffect due to filters change
+  }, [fetchCategories]);
 
   const handleDelete = (id: number) => {
     setProductToDelete(id);
@@ -183,6 +298,54 @@ const ProductList = () => {
     } finally {
       setDeleteDialogOpen(false);
       setProductToDelete(null);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedProducts.length === 0) return;
+    
+    try {
+      await productService.bulkDeleteProducts(selectedProducts);
+      toast({
+        title: 'Success',
+        description: `${selectedProducts.length} product(s) deleted successfully`,
+      });
+      setSelectedProducts([]);
+      setSelectAll(false);
+      fetchProducts();
+    } catch (error) {
+      console.error('Error bulk deleting products:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to delete products',
+        variant: 'destructive',
+      });
+    } finally {
+      setBulkDeleteDialogOpen(false);
+    }
+  };
+
+  const handleBulkStatusUpdate = async () => {
+    if (selectedProducts.length === 0) return;
+    
+    try {
+      await productService.bulkUpdateStatus(selectedProducts, bulkStatusAction);
+      toast({
+        title: 'Success',
+        description: `${selectedProducts.length} product(s) updated to ${bulkStatusAction}`,
+      });
+      setSelectedProducts([]);
+      setSelectAll(false);
+      fetchProducts();
+    } catch (error) {
+      console.error('Error updating product status:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to update product status',
+        variant: 'destructive',
+      });
+    } finally {
+      setBulkStatusDialogOpen(false);
     }
   };
 
@@ -230,16 +393,12 @@ const ProductList = () => {
     }
   };
 
-  const getStatusBadge = (product: Product) => {
-    if (product.stock <= 0) {
-      return <Badge variant="destructive">Out of Stock</Badge>;
-    } else if (product.stock <= (product.low_stock_alert || 10)) {
-      return <Badge className="bg-yellow-500">Low Stock</Badge>;
-    } else if (product.status === 'draft') {
-      return <Badge variant="outline">Draft</Badge>;
-    } else {
-      return <Badge className="bg-green-500">Active</Badge>;
-    }
+  const toggleProductSelection = (id: number) => {
+    setSelectedProducts(prev => 
+      prev.includes(id) 
+        ? prev.filter(pId => pId !== id)
+        : [...prev, id]
+    );
   };
 
   const getProductImage = (product: Product): string => {
@@ -263,6 +422,34 @@ const ProductList = () => {
     return '/placeholder.svg';
   };
 
+  // Stats cards - memoized to prevent unnecessary re-renders
+  const statCards = useMemo(() => [
+    {
+      title: 'Total Products',
+      value: stats.total,
+      icon: Package,
+      color: 'bg-blue-500',
+    },
+    {
+      title: 'Active',
+      value: stats.active,
+      icon: CheckCircle,
+      color: 'bg-green-500',
+    },
+    {
+      title: 'Out of Stock',
+      value: stats.outOfStock,
+      icon: XCircle,
+      color: 'bg-red-500',
+    },
+    {
+      title: 'Low Stock',
+      value: stats.lowStock,
+      icon: AlertTriangle,
+      color: 'bg-yellow-500',
+    },
+  ], [stats]);
+
   if (loading && products.length === 0) {
     return (
       <div className="flex items-center justify-center min-h-[400px]">
@@ -273,6 +460,7 @@ const ProductList = () => {
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-display font-bold">Products</h1>
@@ -298,6 +486,44 @@ const ProductList = () => {
         </div>
       </div>
 
+      {/* Error state */}
+      {error && (
+        <Card className="border-red-200 bg-red-50">
+          <CardContent className="py-4">
+            <div className="flex items-center gap-2 text-red-600">
+              <AlertTriangle className="w-5 h-5" />
+              <p>{error}</p>
+              <Button variant="outline" size="sm" onClick={fetchProducts} className="ml-auto">
+                Try Again
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Stats Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {statCards.map((stat, index) => {
+          const Icon = stat.icon;
+          return (
+            <Card key={index}>
+              <CardContent className="p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm text-muted-foreground">{stat.title}</p>
+                    <p className="text-2xl font-bold mt-1">{stat.value}</p>
+                  </div>
+                  <div className={`w-12 h-12 rounded-lg ${stat.color} flex items-center justify-center text-white`}>
+                    <Icon className="w-6 h-6" />
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* Filters Card */}
       <Card>
         <CardHeader>
           <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
@@ -313,10 +539,10 @@ const ProductList = () => {
                 />
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="All Categories" />
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue placeholder="Category" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Categories</SelectItem>
@@ -327,20 +553,110 @@ const ProductList = () => {
                   ))}
                 </SelectContent>
               </Select>
+
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger className="w-[130px]">
+                  <SelectValue placeholder="Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Status</SelectItem>
+                  <SelectItem value="active">Active</SelectItem>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={sortBy} onValueChange={setSortBy}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue placeholder="Sort by" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="newest">Newest First</SelectItem>
+                  <SelectItem value="oldest">Oldest First</SelectItem>
+                  <SelectItem value="name_asc">Name A-Z</SelectItem>
+                  <SelectItem value="name_desc">Name Z-A</SelectItem>
+                  <SelectItem value="price_low">Price Low-High</SelectItem>
+                  <SelectItem value="price_high">Price High-Low</SelectItem>
+                  <SelectItem value="stock_low">Stock Low-High</SelectItem>
+                </SelectContent>
+              </Select>
+
               <Button variant="outline" onClick={handleSearch}>
+                <Filter className="w-4 h-4 mr-2" />
                 Apply
               </Button>
             </div>
           </div>
         </CardHeader>
-        <CardContent>
+      </Card>
+
+      {/* Bulk Actions Bar */}
+      {selectedProducts.length > 0 && (
+        <div className="bg-muted p-4 rounded-lg flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <CheckSquare className="w-5 h-5 text-primary" />
+            <span className="font-medium">{selectedProducts.length} products selected</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm">
+                  Change Status
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem onClick={() => {
+                  setBulkStatusAction('active');
+                  setBulkStatusDialogOpen(true);
+                }}>
+                  Set Active
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => {
+                  setBulkStatusAction('draft');
+                  setBulkStatusDialogOpen(true);
+                }}>
+                  Set Draft
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => {
+                  setBulkStatusAction('inactive');
+                  setBulkStatusDialogOpen(true);
+                }}>
+                  Set Inactive
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            <Button 
+              variant="destructive" 
+              size="sm"
+              onClick={() => setBulkDeleteDialogOpen(true)}
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Delete Selected
+            </Button>
+            <Button 
+              variant="ghost" 
+              size="sm"
+              onClick={() => {
+                setSelectedProducts([]);
+                setSelectAll(false);
+              }}
+            >
+              Clear Selection
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Products Table */}
+      <Card>
+        <CardContent className="p-0">
           {products.length === 0 ? (
             <div className="text-center py-12">
               <Package className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
               <p className="text-lg font-medium">No products found</p>
               <p className="text-sm text-muted-foreground mt-1">
-                {searchTerm || categoryFilter !== 'all' 
-                  ? 'Try adjusting your filters' 
+                {searchTerm || categoryFilter !== 'all' || statusFilter !== 'all'
+                  ? 'Try adjusting your filters'
                   : 'Get started by adding your first product'}
               </p>
               <Link to="/admin/products/new">
@@ -355,23 +671,38 @@ const ProductList = () => {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-12">
+                      <Checkbox
+                        checked={selectAll}
+                        onCheckedChange={(checked) => setSelectAll(checked as boolean)}
+                      />
+                    </TableHead>
                     <TableHead>Product</TableHead>
+                    <TableHead>SKU</TableHead>
                     <TableHead>Category</TableHead>
-                    <TableHead>Price</TableHead>
+                    <TableHead>Price (MK)</TableHead>
                     <TableHead>Stock</TableHead>
                     <TableHead>Status</TableHead>
+                    <TableHead>Featured</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {products.map((product) => {
                     const imageUrl = getProductImage(product);
+                    const isSelected = selectedProducts.includes(product.id);
                     
                     return (
-                      <TableRow key={product.id}>
+                      <TableRow key={product.id} className={isSelected ? 'bg-muted/50' : ''}>
+                        <TableCell>
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => toggleProductSelection(product.id)}
+                          />
+                        </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-3">
-                            <Avatar className="h-10 w-10 rounded-lg">
+                            <Avatar className="h-12 w-12 rounded-lg">
                               <AvatarImage 
                                 src={imageUrl} 
                                 alt={product.name}
@@ -380,20 +711,25 @@ const ProductList = () => {
                                   (e.target as HTMLImageElement).src = '/placeholder.svg';
                                 }}
                               />
-                              <AvatarFallback>
+                              <AvatarFallback className="rounded-lg">
                                 {product.name?.charAt(0) || 'P'}
                               </AvatarFallback>
                             </Avatar>
                             <div>
                               <p className="font-medium">{product.name}</p>
                               <p className="text-xs text-muted-foreground">
-                                SKU: {product.sku || 'N/A'} | ID: {product.id}
+                                ID: {product.id}
                               </p>
                             </div>
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline">{product.category}</Badge>
+                          <code className="text-xs bg-muted px-2 py-1 rounded">
+                            {product.sku || 'N/A'}
+                          </code>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{product.category || 'Uncategorized'}</Badge>
                         </TableCell>
                         <TableCell>
                           <div>
@@ -409,17 +745,18 @@ const ProductList = () => {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <span className={
-                            product.stock <= 0 
-                              ? 'text-red-500 font-medium' 
-                              : product.stock <= (product.low_stock_alert || 10)
-                              ? 'text-yellow-500 font-medium'
-                              : ''
-                          }>
-                            {product.stock || 0}
-                          </span>
+                          <StockBadge stock={product.stock || 0} lowStockAlert={product.low_stock_alert} />
                         </TableCell>
-                        <TableCell>{getStatusBadge(product)}</TableCell>
+                        <TableCell>
+                          <StatusBadge status={product.status || 'draft'} />
+                        </TableCell>
+                        <TableCell>
+                          {product.is_featured ? (
+                            <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
                         <TableCell className="text-right">
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
@@ -466,7 +803,7 @@ const ProductList = () => {
 
               {/* Pagination */}
               {totalPages > 1 && (
-                <div className="flex items-center justify-between mt-6">
+                <div className="flex items-center justify-between p-4 border-t">
                   <p className="text-sm text-muted-foreground">
                     Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, totalProducts)} of {totalProducts} products
                   </p>
@@ -498,6 +835,7 @@ const ProductList = () => {
                           variant={currentPage === pageNum ? 'default' : 'outline'}
                           size="icon"
                           onClick={() => setCurrentPage(pageNum)}
+                          className={currentPage === pageNum ? 'bg-orange-500 hover:bg-orange-600' : ''}
                         >
                           {pageNum}
                         </Button>
@@ -520,7 +858,7 @@ const ProductList = () => {
         </CardContent>
       </Card>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Single Delete Confirmation Dialog */}
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -533,6 +871,42 @@ const ProductList = () => {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={confirmDelete} className="bg-red-500 hover:bg-red-600">
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Confirmation Dialog */}
+      <AlertDialog open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Selected Products</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete {selectedProducts.length} selected products? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkDelete} className="bg-red-500 hover:bg-red-600">
+              Delete {selectedProducts.length} Products
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Status Update Dialog */}
+      <AlertDialog open={bulkStatusDialogOpen} onOpenChange={setBulkStatusDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Update Product Status</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to set {selectedProducts.length} selected products to {bulkStatusAction}?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleBulkStatusUpdate} className="bg-orange-500 hover:bg-orange-600">
+              Update Status
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

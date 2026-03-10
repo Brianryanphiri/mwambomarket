@@ -22,6 +22,11 @@ import milkImg from '@/assets/products/milk.jpg';
 import fruitsImg from '@/assets/products/fruits.jpg';
 import { Separator } from '@radix-ui/react-separator';
 
+// FIXED: Helper function for imported assets (they're already imported correctly)
+const getAssetUrl = (asset: string): string => {
+  return asset; // Assets imported from '@/assets' are already handled by Vite
+};
+
 interface DailyItem {
   id: string;
   name: string;
@@ -114,7 +119,7 @@ const DailyEssentials = () => {
       name: item.name,
       price: item.price,
       quantity: 1,
-      image: item.image
+      image: item.image // FIX: This is an imported asset, handled by Vite
     });
     
     toast({
@@ -232,12 +237,16 @@ const DailyEssentials = () => {
 
                 <CardContent className="p-5">
                   <div className="flex items-start gap-4">
-                    {/* Image with category icon overlay */}
+                    {/* Image with category icon overlay - FIXED: Added onError handler */}
                     <div className="relative w-20 h-20 rounded-xl overflow-hidden shrink-0 bg-muted">
                       <img 
                         src={item.image} 
                         alt={item.name} 
                         className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                        onError={(e) => {
+                          console.error('Image failed to load:', item.image);
+                          (e.target as HTMLImageElement).src = '/placeholder.svg';
+                        }}
                       />
                       <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                       

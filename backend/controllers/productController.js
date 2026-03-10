@@ -6,26 +6,34 @@ export const getProducts = async (req, res) => {
   try {
     const {
       category,
+      status,
       minPrice,
       maxPrice,
       search,
-      sort,
+      sortBy,
       page = 1,
       limit = 20,
       featured,
       bestSeller,
-      onSale
+      onSale,
+      isNew,
+      organic,
+      localProduct
     } = req.query;
 
     const filters = {
       category,
+      status,
       minPrice,
       maxPrice,
       search,
-      sort,
+      sortBy,
       featured: featured === 'true',
       bestSeller: bestSeller === 'true',
-      onSale: onSale === 'true'
+      onSale: onSale === 'true',
+      isNew: isNew === 'true',
+      organic: organic === 'true',
+      localProduct: localProduct === 'true'
     };
 
     const pagination = {
@@ -39,7 +47,7 @@ export const getProducts = async (req, res) => {
     res.json({
       products,
       page: parseInt(page),
-      pages: Math.ceil(total / parseInt(limit)),
+      totalPages: Math.ceil(total / parseInt(limit)),
       total
     });
   } catch (error) {
@@ -99,7 +107,7 @@ export const getDeals = async (req, res) => {
 export const getTrending = async (req, res) => {
   try {
     const products = await Product.findAll(
-      { sort: 'popular' },
+      { sortBy: 'popular' },
       { limit: 20 }
     );
     res.json(products);
@@ -136,19 +144,25 @@ export const getCategories = async (req, res) => {
 
     // Step 2: Get product counts separately
     const [counts] = await pool.query(`
-      SELECT category_id, COUNT(*) as product_count 
+      SELECT category, COUNT(*) as product_count 
       FROM products 
-      WHERE status = 'active' AND category_id IS NOT NULL
-      GROUP BY category_id
+      WHERE status = 'active' AND category IS NOT NULL
+      GROUP BY category
     `);
 
     // Step 3: Merge in JavaScript
     const countMap = {};
-    counts.forEach(c => { countMap[c.category_id] = c.product_count; });
+    counts.forEach(c => { countMap[c.category] = c.product_count; });
 
     const result = categories.map(cat => ({
-      ...cat,
-      product_count: countMap[cat.id] || 0
+      id: cat.id,
+      name: cat.name,
+      slug: cat.slug,
+      description: cat.description,
+      parent_id: cat.parent_id,
+      sort_order: cat.sort_order,
+      is_active: cat.is_active,
+      product_count: countMap[cat.name] || 0
     }));
 
     res.json({ 
@@ -184,8 +198,8 @@ export const getCategory = async (req, res) => {
 
     // Get product count for this category
     const [countResult] = await pool.query(
-      'SELECT COUNT(*) as product_count FROM products WHERE category_id = ? AND status = "active"',
-      [category.id]
+      'SELECT COUNT(*) as product_count FROM products WHERE category = ? AND status = "active"',
+      [category.name]
     );
     
     category.product_count = countResult[0].product_count;
@@ -382,8 +396,8 @@ export const deleteCategory = async (req, res) => {
 
     // Check if any products are linked to this category
     const [products] = await pool.query(
-      'SELECT COUNT(*) as count FROM products WHERE category_id = ?',
-      [id]
+      'SELECT COUNT(*) as count FROM products WHERE category = ?',
+      [existingCategory.name]
     );
 
     if (products[0].count > 0) {
@@ -471,7 +485,42 @@ export const toggleCategoryStatus = async (req, res) => {
 // Create product (admin)
 export const createProduct = async (req, res) => {
   try {
-    const productId = await Product.create(req.body);
+    const productData = {
+      name: req.body.name,
+      description: req.body.description,
+      price: parseFloat(req.body.price) || 0,
+      original_price: req.body.comparePrice ? parseFloat(req.body.comparePrice) : null,
+      unit: req.body.unit || 'piece',
+      category: req.body.category,
+      subcategory: req.body.subcategory || null,
+      brand: req.body.brand || null,
+      sku: req.body.sku || null,
+      barcode: req.body.barcode || null,
+      stock: parseInt(req.body.stock) || 0,
+      low_stock_alert: parseInt(req.body.lowStockAlert) || 10,
+      min_order_qty: parseInt(req.body.minOrderQty) || 1,
+      max_order_qty: req.body.maxOrderQty ? parseInt(req.body.maxOrderQty) : null,
+      weight: req.body.weight ? parseFloat(req.body.weight) : null,
+      is_taxable: req.body.isTaxable !== false,
+      tax_rate: req.body.isTaxable ? req.body.taxRate : null,
+      is_physical: req.body.isPhysical !== false,
+      requires_shipping: req.body.requiresShipping !== false,
+      is_featured: req.body.isFeatured || false,
+      is_best_seller: req.body.isBestSeller || false,
+      is_on_sale: req.body.isOnSale || !!req.body.comparePrice,
+      is_new: req.body.isNew || false,
+      organic: req.body.organic || false,
+      local_product: req.body.localProduct || false,
+      status: req.body.status || (req.body.isPublished ? 'active' : 'draft'),
+      tags: req.body.tags || null,
+      seo_title: req.body.seoTitle || null,
+      seo_description: req.body.seoDescription || null,
+      seo_keywords: req.body.seoKeywords || null,
+      sale_end_date: req.body.saleEndDate || null,
+      images: req.body.images || []
+    };
+
+    const productId = await Product.create(productData);
     const product = await Product.findById(productId);
     res.status(201).json(product);
   } catch (error) {
@@ -483,7 +532,42 @@ export const createProduct = async (req, res) => {
 // Update product (admin)
 export const updateProduct = async (req, res) => {
   try {
-    await Product.update(req.params.id, req.body);
+    const productData = {
+      name: req.body.name,
+      description: req.body.description,
+      price: parseFloat(req.body.price) || 0,
+      original_price: req.body.comparePrice ? parseFloat(req.body.comparePrice) : null,
+      unit: req.body.unit || 'piece',
+      category: req.body.category,
+      subcategory: req.body.subcategory || null,
+      brand: req.body.brand || null,
+      sku: req.body.sku || null,
+      barcode: req.body.barcode || null,
+      stock: parseInt(req.body.stock) || 0,
+      low_stock_alert: parseInt(req.body.lowStockAlert) || 10,
+      min_order_qty: parseInt(req.body.minOrderQty) || 1,
+      max_order_qty: req.body.maxOrderQty ? parseInt(req.body.maxOrderQty) : null,
+      weight: req.body.weight ? parseFloat(req.body.weight) : null,
+      is_taxable: req.body.isTaxable !== false,
+      tax_rate: req.body.isTaxable ? req.body.taxRate : null,
+      is_physical: req.body.isPhysical !== false,
+      requires_shipping: req.body.requiresShipping !== false,
+      is_featured: req.body.isFeatured || false,
+      is_best_seller: req.body.isBestSeller || false,
+      is_on_sale: req.body.isOnSale || !!req.body.comparePrice,
+      is_new: req.body.isNew || false,
+      organic: req.body.organic || false,
+      local_product: req.body.localProduct || false,
+      status: req.body.status || (req.body.isPublished ? 'active' : 'draft'),
+      tags: req.body.tags || null,
+      seo_title: req.body.seoTitle || null,
+      seo_description: req.body.seoDescription || null,
+      seo_keywords: req.body.seoKeywords || null,
+      sale_end_date: req.body.saleEndDate || null,
+      images: req.body.images || []
+    };
+
+    await Product.update(req.params.id, productData);
     const product = await Product.findById(req.params.id);
     res.json(product);
   } catch (error) {
@@ -503,6 +587,30 @@ export const deleteProduct = async (req, res) => {
   }
 };
 
+// Bulk delete products (admin)
+export const bulkDeleteProducts = async (req, res) => {
+  try {
+    const { ids } = req.body;
+    
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ message: 'No product IDs provided' });
+    }
+
+    // Delete products one by one to ensure proper cleanup
+    for (const id of ids) {
+      await Product.delete(id);
+    }
+
+    res.json({ 
+      success: true,
+      message: `${ids.length} product(s) deleted successfully` 
+    });
+  } catch (error) {
+    console.error('Bulk delete products error:', error);
+    res.status(500).json({ message: 'Failed to delete products' });
+  }
+};
+
 // Update stock (admin)
 export const updateStock = async (req, res) => {
   try {
@@ -512,6 +620,69 @@ export const updateStock = async (req, res) => {
   } catch (error) {
     console.error('Update stock error:', error);
     res.status(500).json({ message: 'Failed to update stock' });
+  }
+};
+
+// Bulk update status (admin)
+export const bulkUpdateStatus = async (req, res) => {
+  try {
+    const { ids, status } = req.body;
+    
+    if (!ids || !Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ message: 'No product IDs provided' });
+    }
+
+    if (!status || !['active', 'draft', 'inactive'].includes(status)) {
+      return res.status(400).json({ message: 'Invalid status' });
+    }
+
+    // Update products one by one
+    for (const id of ids) {
+      await Product.update(id, { status });
+    }
+
+    res.json({ 
+      success: true,
+      message: `${ids.length} product(s) updated successfully` 
+    });
+  } catch (error) {
+    console.error('Bulk update status error:', error);
+    res.status(500).json({ message: 'Failed to update products' });
+  }
+};
+
+// Duplicate product (admin)
+export const duplicateProduct = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    // Get original product
+    const original = await Product.findById(id);
+    if (!original) {
+      return res.status(404).json({ message: 'Product not found' });
+    }
+
+    // Create new product data from original
+    const newProductData = {
+      ...original,
+      name: `${original.name} (Copy)`,
+      sku: original.sku ? `${original.sku}-COPY` : null,
+      status: 'draft',
+      images: original.images || []
+    };
+
+    // Remove id and timestamps
+    delete newProductData.id;
+    delete newProductData.created_at;
+    delete newProductData.updated_at;
+
+    const productId = await Product.create(newProductData);
+    const product = await Product.findById(productId);
+    
+    res.status(201).json(product);
+  } catch (error) {
+    console.error('Duplicate product error:', error);
+    res.status(500).json({ message: 'Failed to duplicate product' });
   }
 };
 
@@ -563,4 +734,5 @@ export const getOutOfStockProducts = async (req, res) => {
       success: false,
       message: 'Failed to get out of stock products' 
     });
-  }};
+  }
+};

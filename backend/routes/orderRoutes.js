@@ -4,6 +4,9 @@ import {
   trackOrder,
   lookupOrders,
   cancelOrder,
+  validateCoupon,
+  getPublicDeliveryZones,
+  getPublicDeliverySlots,
   getAllOrders,
   getOrder,
   updateOrderStatus,
@@ -13,16 +16,41 @@ import { protect, admin } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Public routes (guest checkout)
+// ============= PUBLIC ROUTES (no auth required) =============
+// IMPORTANT: These must be registered FIRST before any protected routes
+
+// Validate coupon
+router.post('/validate-coupon', validateCoupon);
+
+// Get public delivery data
+router.get('/delivery-zones', getPublicDeliveryZones);
+router.get('/delivery-slots', getPublicDeliverySlots);
+
+// Create order (guest checkout)
 router.post('/', createOrder);
-router.get('/track/:token', trackOrder);
+
+// Track order (public)
+router.get('/track', trackOrder);
+
+// Lookup orders by email
 router.post('/lookup', lookupOrders);
+
+// Cancel order (guest)
 router.post('/:orderNumber/cancel', cancelOrder);
 
-// Admin routes (protected)
-router.get('/admin', protect, admin, getAllOrders);
-router.get('/admin/dashboard', protect, admin, getDashboardStats);
-router.get('/admin/:id', protect, admin, getOrder);
-router.patch('/admin/:id/status', protect, admin, updateOrderStatus);
+// ============= ADMIN ROUTES (protected) =============
+// Using '/admin' prefix for all admin routes
+
+// Dashboard stats
+router.get('/admin/dashboard', protect, admin('super_admin', 'admin', 'manager'), getDashboardStats);
+
+// Get all orders with filters
+router.get('/admin', protect, admin('super_admin', 'admin', 'manager'), getAllOrders);
+
+// Get single order
+router.get('/admin/:id', protect, admin('super_admin', 'admin', 'manager'), getOrder);
+
+// Update order status
+router.patch('/admin/:id/status', protect, admin('super_admin', 'admin'), updateOrderStatus);
 
 export default router;

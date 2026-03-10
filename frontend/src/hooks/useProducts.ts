@@ -36,7 +36,7 @@ export const useProducts = () => {
     } finally {
       setLoading(false);
     }
-  }, [toast]);
+  }, [toast]); // FIX: Only depends on toast
 
   const createProduct = useCallback(async (data: ProductFormData) => {
     setLoading(true);

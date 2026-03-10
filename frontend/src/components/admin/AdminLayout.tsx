@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+// src/components/admin/AdminLayout.tsx
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
@@ -96,7 +97,6 @@ import {
   Banknote,
   Coins,
   Receipt,
-  // FileInvoice is not available, use FileText instead
   BadgePercent,
   BadgeDollarSign,
   BadgeEuro,
@@ -208,13 +208,11 @@ import {
   Hammer,
   Tool,
   Construction,
-  // Add these imports for Services
   Sun as SunIcon,
   Calendar as CalendarIcon,
   Briefcase,
   GraduationCap,
   Zap as ZapIcon,
-  // Subscription Management Icons
   Repeat as RepeatIcon,
   CreditCard as CreditCardIcon,
   Clock as ClockIcon,
@@ -779,6 +777,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
+import api from '@/services/api';
+import { useToast } from '@/hooks/use-toast';
 
 // Types
 interface Notification {
@@ -788,6 +788,13 @@ interface Notification {
   time: string;
   read: boolean;
   type: 'order' | 'product' | 'customer' | 'system' | 'alert' | 'subscription';
+}
+
+interface NotificationCounts {
+  pending_orders: number;
+  low_stock: number;
+  pending_calls: number;
+  total: number;
 }
 
 interface QuickAction {
@@ -834,8 +841,8 @@ const NOTIFICATION_COLORS: Record<Notification['type'], string> = {
 const QUICK_ACTIONS: QuickAction[] = [
   { id: '1', name: 'Add Product', icon: Package, href: '/admin/products/new', shortcut: '⌘N', color: 'text-blue-600' },
   { id: '2', name: 'New Order', icon: ShoppingCart, href: '/admin/orders/new', shortcut: '⌘O', color: 'text-green-600' },
-  { id: '3', name: 'Create Discount', icon: Tag, href: '/admin/discounts/new', shortcut: '⌘D', color: 'text-purple-600' },
-  { id: '4', name: 'Send Email', icon: Mail, href: '/admin/newsletter/new', shortcut: '⌘E', color: 'text-orange-600' },
+  { id: '3', name: 'Create Discount', icon: Tag, href: '/admin/marketing/discounts/new', shortcut: '⌘D', color: 'text-purple-600' },
+  { id: '4', name: 'Send Email', icon: Mail, href: '/admin/marketing/newsletter/new', shortcut: '⌘E', color: 'text-orange-600' },
   { id: '5', name: 'View Subscribers', icon: UsersRound, href: '/admin/subscriptions/subscribers', shortcut: '⌘U', color: 'text-indigo-600' },
 ];
 
@@ -887,39 +894,39 @@ const NAVIGATION_GROUPS: NavGroup[] = [
   {
     name: 'Inventory',
     items: [
-      { name: 'Categories', href: '/admin/categories', icon: Grid, permission: 'manage_categories' },
-      { name: 'Brands', href: '/admin/brands', icon: Award, permission: 'manage_brands' },
-      { name: 'Suppliers', href: '/admin/suppliers', icon: Truck, permission: 'manage_suppliers' },
-      { name: 'Warehouse', href: '/admin/warehouse', icon: Database, permission: 'manage_inventory' },
+      { name: 'Categories', href: '/admin/inventory/categories', icon: Grid, permission: 'manage_categories' },
+      { name: 'Brands', href: '/admin/inventory/brands', icon: Award, permission: 'manage_brands' },
+      { name: 'Suppliers', href: '/admin/inventory/suppliers', icon: Truck, permission: 'manage_suppliers' },
+      { name: 'Warehouse', href: '/admin/inventory/warehouse', icon: Database, permission: 'manage_inventory' },
     ]
   },
   {
     name: 'Marketing',
     items: [
-      { name: 'Discounts', href: '/admin/discounts', icon: Tag, permission: 'manage_discounts' },
-      { name: 'Promotions', href: '/admin/promotions', icon: Gift, permission: 'manage_promotions' },
-      { name: 'Campaigns', href: '/admin/campaigns', icon: TrendingUp, permission: 'manage_campaigns' },
-      { name: 'Newsletter', href: '/admin/newsletter', icon: Mail, permission: 'manage_newsletter' },
+      { name: 'Discounts', href: '/admin/marketing/discounts', icon: Tag, permission: 'manage_discounts' },
+      { name: 'Promotions', href: '/admin/marketing/promotions', icon: Gift, permission: 'manage_promotions' },
+      { name: 'Campaigns', href: '/admin/marketing/campaigns', icon: TrendingUp, permission: 'manage_campaigns' },
+      { name: 'Newsletter', href: '/admin/marketing/newsletter', icon: Mail, permission: 'manage_newsletter' },
     ]
   },
   {
     name: 'Content',
     items: [
-      { name: 'Pages', href: '/admin/pages', icon: FileText, permission: 'manage_pages' },
-      { name: 'Blog', href: '/admin/blog', icon: FileText, permission: 'manage_blog' },
-      { name: 'Media', href: '/admin/media', icon: Image, permission: 'manage_media' },
-      { name: 'FAQ', href: '/admin/faq', icon: HelpCircle, permission: 'manage_faq' },
+      { name: 'Pages', href: '/admin/content/pages', icon: FileText, permission: 'manage_pages' },
+      { name: 'Blog', href: '/admin/content/blog', icon: FileText, permission: 'manage_blog' },
+      { name: 'Media', href: '/admin/content/media', icon: Image, permission: 'manage_media' },
+      { name: 'FAQ', href: '/admin/content/faq', icon: HelpCircle, permission: 'manage_faq' },
     ]
   },
   {
     name: 'Settings',
     items: [
       { name: 'General', href: '/admin/settings', icon: SettingsIcon, permission: 'manage_settings' },
-      { name: 'Payment', href: '/admin/payment', icon: CreditCard, permission: 'manage_payment' },
-      { name: 'Shipping', href: '/admin/shipping', icon: Truck, permission: 'manage_shipping' },
-      { name: 'Taxes', href: '/admin/taxes', icon: Percent, permission: 'manage_taxes' },
-      { name: 'Users', href: '/admin/users', icon: Users, permission: 'manage_users' },
-      { name: 'Permissions', href: '/admin/permissions', icon: Shield, permission: 'manage_permissions' },
+      { name: 'Payment', href: '/admin/settings/payment', icon: CreditCard, permission: 'manage_payment' },
+      { name: 'Shipping', href: '/admin/settings/shipping', icon: Truck, permission: 'manage_shipping' },
+      { name: 'Taxes', href: '/admin/settings/taxes', icon: Percent, permission: 'manage_taxes' },
+      { name: 'Users', href: '/admin/settings/users', icon: Users, permission: 'manage_users' },
+      { name: 'Permissions', href: '/admin/settings/permissions', icon: Shield, permission: 'manage_permissions' },
     ]
   }
 ];
@@ -988,6 +995,12 @@ const AdminLayout = () => {
   ]);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [notificationCounts, setNotificationCounts] = useState<NotificationCounts>({
+    pending_orders: 0,
+    low_stock: 0,
+    pending_calls: 0,
+    total: 0
+  });
   const [recentSearches, setRecentSearches] = useState([
     'ORD-2024-001',
     'Fresh Tomatoes',
@@ -999,6 +1012,8 @@ const AdminLayout = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { admin, logout, hasPermission } = useAdminAuth();
+  const { toast } = useToast();
+  const refreshInterval = useRef<NodeJS.Timeout>();
 
   // Persist preferences
   useEffect(() => {
@@ -1009,6 +1024,38 @@ const AdminLayout = () => {
     localStorage.setItem('darkMode', JSON.stringify(darkMode));
     document.documentElement.classList.toggle('dark', darkMode);
   }, [darkMode]);
+
+  // Fetch notification counts
+  useEffect(() => {
+    fetchNotificationCounts();
+    
+    // Refresh every 60 seconds
+    refreshInterval.current = setInterval(() => {
+      fetchNotificationCounts(true);
+    }, 60000);
+
+    return () => {
+      if (refreshInterval.current) {
+        clearInterval(refreshInterval.current);
+      }
+    };
+  }, []);
+
+  const fetchNotificationCounts = async (silent = false) => {
+    try {
+      const token = localStorage.getItem('adminToken');
+      const response = await api.get('/admin/notifications/count', {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
+      setNotificationCounts(response.data);
+    } catch (error) {
+      if (!silent) {
+        console.error('Error fetching notification counts:', error);
+      }
+    }
+  };
 
   // Filter navigation based on permissions
   const filteredNavigation = useMemo(() => 
@@ -1101,7 +1148,11 @@ const AdminLayout = () => {
     return paths.map((path, index) => {
       const href = '/' + paths.slice(0, index + 1).join('/');
       const isLast = index === paths.length - 1;
-      return { path, href, isLast };
+      return { 
+        path: path.replace(/-/g, ' '), 
+        href, 
+        isLast 
+      };
     });
   }, [location.pathname]);
 
@@ -1271,7 +1322,7 @@ const AdminLayout = () => {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{admin?.name || 'Admin User'}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{admin?.email}</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 truncate capitalize">{admin?.role || 'Admin'}</p>
                 </div>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -1314,7 +1365,7 @@ const AdminLayout = () => {
                 </TooltipTrigger>
                 <TooltipContent side="right">
                   <p>{admin?.name || 'Admin User'}</p>
-                  <p className="text-xs text-gray-500">{admin?.email}</p>
+                  <p className="text-xs text-gray-500 capitalize">{admin?.role || 'Admin'}</p>
                 </TooltipContent>
               </Tooltip>
             )}
@@ -1352,19 +1403,19 @@ const AdminLayout = () => {
                   >
                     <Home className="w-4 h-4" />
                   </Link>
-                  {breadcrumbs.map(({ path, href, isLast }) => (
-                    <div key={path} className="flex items-center">
+                  {breadcrumbs.map(({ path, href, isLast }, index) => (
+                    <div key={index} className="flex items-center">
                       <ChevronRight className="w-3 h-3 text-gray-400 mx-1" />
                       {isLast ? (
                         <span className="font-medium text-gray-900 dark:text-gray-100 capitalize px-2 py-1">
-                          {path.replace(/-/g, ' ')}
+                          {path}
                         </span>
                       ) : (
                         <Link
                           to={href}
                           className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 capitalize px-2 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
                         >
-                          {path.replace(/-/g, ' ')}
+                          {path}
                         </Link>
                       )}
                     </div>
@@ -1451,72 +1502,75 @@ const AdminLayout = () => {
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" size="icon" className="relative rounded-full hover:bg-gray-100 dark:hover:bg-gray-800">
                       <Bell className="w-4 h-4" />
-                      {unreadCount > 0 && (
+                      {notificationCounts.total > 0 && (
                         <>
                           <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full animate-ping" />
-                          <span className="absolute top-0 right-0 w-4 h-4 bg-red-500 text-white text-xs flex items-center justify-center rounded-full">
-                            {unreadCount}
+                          <span className="absolute -top-1 -right-1 min-w-[20px] h-5 bg-red-500 text-white text-xs flex items-center justify-center rounded-full px-1 border-2 border-white dark:border-gray-900">
+                            {notificationCounts.total > 99 ? '99+' : notificationCounts.total}
                           </span>
                         </>
                       )}
-                      {subscriptionNotificationCount > 0 && (
-                        <span className="absolute -top-1 -left-1 w-5 h-5 bg-indigo-500 text-white text-xs flex items-center justify-center rounded-full ring-2 ring-white dark:ring-gray-900">
-                          {subscriptionNotificationCount}
-                        </span>
-                      )}
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-96">
-                    <DropdownMenuLabel className="flex items-center justify-between p-4">
-                      <span className="text-lg font-semibold">Notifications</span>
-                      {unreadCount > 0 && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={markAllNotificationsAsRead}
-                          className="h-8 text-xs rounded-full"
-                        >
-                          Mark all read
-                        </Button>
-                      )}
+                  <DropdownMenuContent align="end" className="w-80">
+                    <DropdownMenuLabel className="p-4">
+                      <div className="flex items-center justify-between">
+                        <span className="text-lg font-semibold">Notifications</span>
+                        {notificationCounts.total > 0 && (
+                          <Badge variant="destructive" className="rounded-full">
+                            {notificationCounts.total} new
+                          </Badge>
+                        )}
+                      </div>
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
-                    <ScrollArea className="h-[480px]">
-                      {notifications.length > 0 ? (
-                        notifications.map((notification) => {
-                          const Icon = getNotificationIcon(notification.type);
-                          return (
-                            <DropdownMenuItem
-                              key={notification.id}
-                              className={cn(
-                                "flex items-start gap-4 p-4 cursor-pointer focus:bg-gray-50 dark:focus:bg-gray-800",
-                                !notification.read && "bg-gradient-to-r from-blue-50/50 to-transparent dark:from-blue-950/30"
-                              )}
-                              onClick={() => markNotificationAsRead(notification.id)}
-                            >
-                              <div className={cn(
-                                "w-10 h-10 rounded-xl flex items-center justify-center shrink-0",
-                                getNotificationColor(notification.type)
-                              )}>
-                                <Icon className="w-5 h-5" />
+                    <div className="p-2 space-y-1">
+                      {notificationCounts.pending_orders > 0 && (
+                        <Link to="/admin/orders?status=pending">
+                          <DropdownMenuItem className="p-3 cursor-pointer">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-yellow-100 dark:bg-yellow-900/20 flex items-center justify-center">
+                                <ShoppingCart className="w-4 h-4 text-yellow-600 dark:text-yellow-400" />
                               </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm font-medium">{notification.title}</p>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                                  {notification.message}
-                                </p>
-                                <div className="flex items-center gap-2 mt-2">
-                                  <Clock className="w-3 h-3 text-gray-400" />
-                                  <p className="text-xs text-gray-400">{notification.time}</p>
-                                </div>
+                              <div>
+                                <p className="font-medium">{notificationCounts.pending_orders} Pending Order(s)</p>
+                                <p className="text-xs text-muted-foreground">Requires attention</p>
                               </div>
-                              {!notification.read && (
-                                <div className="w-2 h-2 bg-blue-600 rounded-full mt-2" />
-                              )}
-                            </DropdownMenuItem>
-                          );
-                        })
-                      ) : (
+                            </div>
+                          </DropdownMenuItem>
+                        </Link>
+                      )}
+                      {notificationCounts.low_stock > 0 && (
+                        <Link to="/admin/inventory?filter=low-stock">
+                          <DropdownMenuItem className="p-3 cursor-pointer">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-red-100 dark:bg-red-900/20 flex items-center justify-center">
+                                <Package className="w-4 h-4 text-red-600 dark:text-red-400" />
+                              </div>
+                              <div>
+                                <p className="font-medium">{notificationCounts.low_stock} Low Stock Item(s)</p>
+                                <p className="text-xs text-muted-foreground">Running out soon</p>
+                              </div>
+                            </div>
+                          </DropdownMenuItem>
+                        </Link>
+                      )}
+                      {notificationCounts.pending_calls > 0 && (
+                        <Link to="/admin/subscriptions/calls">
+                          <DropdownMenuItem className="p-3 cursor-pointer">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/20 flex items-center justify-center">
+                                <Phone className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                              </div>
+                              <div>
+                                <p className="font-medium">{notificationCounts.pending_calls} Pending Call(s)</p>
+                                <p className="text-xs text-muted-foreground">Awaiting follow-up</p>
+                              </div>
+                            </div>
+                          </DropdownMenuItem>
+                        </Link>
+                      )}
+                      {notificationCounts.total === 0 && (
                         <div className="p-8 text-center">
                           <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center">
                             <Bell className="w-8 h-8 text-gray-400" />
@@ -1525,16 +1579,7 @@ const AdminLayout = () => {
                           <p className="text-xs text-gray-400 mt-1">You're all caught up!</p>
                         </div>
                       )}
-                    </ScrollArea>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem asChild className="p-2">
-                      <Link 
-                        to="/admin/notifications" 
-                        className="justify-center text-sm font-medium text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300"
-                      >
-                        View all notifications
-                      </Link>
-                    </DropdownMenuItem>
+                    </div>
                   </DropdownMenuContent>
                 </DropdownMenu>
 
@@ -1550,7 +1595,7 @@ const AdminLayout = () => {
                       </Avatar>
                       <div className="hidden sm:block text-left">
                         <p className="text-sm font-medium">{admin?.name || 'Admin User'}</p>
-                        <p className="text-xs text-gray-500 dark:text-gray-400">{admin?.email}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 capitalize">{admin?.role || 'Admin'}</p>
                       </div>
                       <ChevronDown className="w-4 h-4 hidden sm:block text-gray-400" />
                     </Button>
@@ -1560,6 +1605,9 @@ const AdminLayout = () => {
                       <div className="flex flex-col">
                         <span className="text-base font-semibold">{admin?.name || 'Admin User'}</span>
                         <span className="text-sm font-normal text-gray-500">{admin?.email}</span>
+                        <Badge className="mt-2 self-start capitalize" variant="outline">
+                          {admin?.role || 'Admin'}
+                        </Badge>
                       </div>
                     </DropdownMenuLabel>
                     <DropdownMenuSeparator />
@@ -1607,8 +1655,37 @@ const AdminLayout = () => {
             </div>
           </header>
 
+          {/* Breadcrumb below header (mobile) */}
+          <div className="sm:hidden px-6 py-3 bg-white/50 dark:bg-gray-900/50 backdrop-blur-sm border-b border-gray-200/50 dark:border-gray-700/50">
+            <nav className="flex items-center gap-1.5 text-sm overflow-x-auto">
+              <Link 
+                to="/admin/dashboard" 
+                className="p-1.5 rounded-lg text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors shrink-0"
+              >
+                <Home className="w-4 h-4" />
+              </Link>
+              {breadcrumbs.map(({ path, href, isLast }, index) => (
+                <div key={index} className="flex items-center shrink-0">
+                  <ChevronRight className="w-3 h-3 text-gray-400 mx-1" />
+                  {isLast ? (
+                    <span className="font-medium text-gray-900 dark:text-gray-100 capitalize whitespace-nowrap">
+                      {path}
+                    </span>
+                  ) : (
+                    <Link
+                      to={href}
+                      className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 capitalize whitespace-nowrap px-2 py-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                    >
+                      {path}
+                    </Link>
+                  )}
+                </div>
+              ))}
+            </nav>
+          </div>
+
           {/* Page content */}
-          <main className="pt-20 min-h-screen">
+          <main className="pt-20 sm:pt-20 min-h-screen">
             <div className="p-6 md:p-8">
               <Outlet />
             </div>

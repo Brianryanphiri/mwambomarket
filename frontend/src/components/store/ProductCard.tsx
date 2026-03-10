@@ -1,137 +1,182 @@
-import { Star, ShoppingCart, Heart } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { Link } from 'react-router-dom';
+import { ShoppingCart, Star, Heart } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { useCart } from './CartProvider';
+import { useToast } from '@/hooks/use-toast';
 import type { Product } from '@/types/product.types';
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+
 interface ProductCardProps {
-  id: string | number;
-  name: string;
-  price: number;
+  product: Product;
+  // Allow spreading props as fallback
+  id?: number;
+  name?: string;
+  price?: number;
   original_price?: number;
-  unit: string;
-  images?: string[] | { url: string }[];
-  rating?: number;
-  is_featured?: boolean;
-  is_best_seller?: boolean;
-  is_on_sale?: boolean;
-  is_new?: boolean;
+  unit?: string;
+  images?: any[];
   stock?: number;
-  badge?: string;
-  image?: string; // Add this for direct image prop (used by DailyFresh)
-  onAddToCart?: (e: React.MouseEvent) => void;
-  onViewDetails?: () => void;
-  onImageError?: () => void; // Add this for handling image errors
+  rating?: number;
+  num_reviews?: number;
+  is_new?: boolean;
+  is_best_seller?: boolean;
+  organic?: boolean;
+  local_product?: boolean;
+  category?: string;
 }
 
-const ProductCard = (props: ProductCardProps) => {
-  const {
-    id,
-    name,
-    price,
-    original_price,
-    unit,
-    images,
-    rating,
-    is_featured,
-    is_best_seller,
-    is_on_sale,
-    is_new,
-    stock,
-    badge: propBadge,
-    image: directImage, // Direct image prop (for DailyFresh)
-    onAddToCart: customAddToCart,
-    onViewDetails,
-    onImageError
-  } = props;
+// Helper to extract filename from URL or path
+const extractFilename = (url: string): string => {
+  if (!url) return '';
+  if (url.includes('/')) {
+    return url.split('/').pop() || '';
+  }
+  return url;
+};
 
+// Helper to get full image URL for display
+const getImageUrl = (filename: string): string => {
+  if (!filename) return '/placeholder.svg';
+  if (filename.startsWith('http://') || filename.startsWith('https://')) {
+    return filename;
+  }
+  if (filename.startsWith('blob:')) {
+    return filename;
+  }
+  return `${API_URL.replace('/api', '')}/uploads/${filename}`;
+};
+
+// Helper to parse numeric values safely
+const parseNumeric = (value: any): number => {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') {
+    const parsed = parseFloat(value);
+    return isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+};
+
+const ProductCard = (props: ProductCardProps) => {
   const { addItem } = useCart();
+  const { toast } = useToast();
+
+  // Handle both prop patterns: either a product object or spread props
+  const product = props.product || props;
   
-  // Determine badge
-  let badge = propBadge;
-  if (!badge) {
-    if (is_new) badge = 'New';
-    else if (is_best_seller) badge = 'Best Seller';
-    else if (is_on_sale) badge = 'Sale';
-    else if (is_featured) badge = 'Featured';
+  // Safely extract values with fallbacks
+  const id = product?.id || props.id;
+  const name = product?.name || props.name || 'Product';
+  const price = parseNumeric(product?.price || props.price);
+  const originalPrice = parseNumeric(product?.original_price || props.original_price);
+  const unit = product?.unit || props.unit || 'piece';
+  const images = product?.images || props.images || [];
+  const stock = parseNumeric(product?.stock || props.stock);
+  const rating = parseNumeric(product?.rating || props.rating);
+  const numReviews = product?.num_reviews || props.num_reviews || 0;
+  const isNew = product?.is_new || props.is_new || false;
+  const isBestSeller = product?.is_best_seller || props.is_best_seller || false;
+  const organic = product?.organic || props.organic || false;
+  const localProduct = product?.local_product || props.local_product || false;
+
+  // Validate required fields
+  if (!id) {
+    console.error('ProductCard: Missing product ID', props);
+    return null;
   }
 
-  const discount = original_price && original_price > price
-    ? Math.round(((original_price - price) / original_price) * 100)
-    : 0;
+  const isOnSale = originalPrice > price;
+  const discount = isOnSale ? Math.round(((originalPrice - price) / originalPrice) * 100) : 0;
 
-  const inStock = (stock ?? 0) > 0;
-
-  // Get image URL - support both images array and direct image prop
-  const getImageUrl = () => {
-    // If direct image prop is provided (from DailyFresh), use it
-    if (directImage) {
-      return directImage;
+  // Get product image
+  const getProductImage = (): string => {
+    try {
+      if (images && Array.isArray(images) && images.length > 0) {
+        const firstImage = images[0];
+        let filename = '';
+        
+        if (typeof firstImage === 'string') {
+          filename = extractFilename(firstImage);
+        } else if (firstImage && typeof firstImage === 'object' && 'url' in firstImage) {
+          filename = extractFilename(firstImage.url);
+        }
+        
+        return getImageUrl(filename);
+      }
+    } catch (error) {
+      console.error('Error getting product image:', error);
     }
     
-    // Otherwise use the images array
-    if (!images || images.length === 0) return '/placeholder.svg';
-    const firstImage = images[0];
-    if (typeof firstImage === 'string') return firstImage;
-    return firstImage.url || '/placeholder.svg';
+    return '/placeholder.svg';
   };
 
   const handleAddToCart = (e: React.MouseEvent) => {
-    e.preventDefault();
+    e.preventDefault(); // Prevent navigation to product page
     e.stopPropagation();
-    
-    // Use custom handler if provided, otherwise use default cart
-    if (customAddToCart) {
-      customAddToCart(e);
-    } else {
-      addItem({ id: id.toString(), name, price, unit });
+
+    if (stock <= 0) {
+      toast({
+        title: 'Out of Stock',
+        description: 'This product is currently out of stock',
+        variant: 'destructive',
+      });
+      return;
     }
+
+    addItem({
+      productId: id.toString(),
+      name: name,
+      price: price,
+      image: extractFilename(getProductImage()),
+      unit: unit,
+      quantity: 1,
+      stock: stock
+    });
   };
 
-  const handleCardClick = () => {
-    if (onViewDetails) {
-      onViewDetails();
-    }
-  };
-
-  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
-    console.error(`Image failed to load for product: ${name} (ID: ${id})`);
-    console.error('Failed URL:', e.currentTarget.src);
-    
-    // Call the onImageError prop if provided
-    if (onImageError) {
-      onImageError();
-    } else {
-      // Fallback to placeholder if no error handler provided
-      (e.target as HTMLImageElement).src = '/placeholder.svg';
-    }
-  };
+  const imageUrl = getProductImage();
 
   return (
-    <div 
-      className="group cursor-pointer" 
-      onClick={handleCardClick}
-    >
-      <div className="bg-card rounded-xl overflow-hidden border border-border hover:shadow-lg transition-all duration-300 hover:-translate-y-1">
+    <Link to={`/product/${id}`} className="group">
+      <div className="bg-card rounded-xl border border-border overflow-hidden hover:shadow-lg transition-all hover:-translate-y-1">
         {/* Image Container */}
-        <div className="relative aspect-square overflow-hidden bg-muted/30">
+        <div className="relative aspect-square bg-muted/30">
           <img 
-            src={getImageUrl()}
+            src={imageUrl} 
             alt={name}
-            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
-            onError={handleImageError}
-            loading="lazy"
+            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            onError={(e) => {
+              console.error('Image failed to load:', imageUrl);
+              (e.target as HTMLImageElement).src = '/placeholder.svg';
+            }}
           />
           
           {/* Badges */}
           <div className="absolute top-2 left-2 flex flex-col gap-1">
-            {badge && (
-              <Badge className="bg-store-badge text-primary-foreground border-none">
-                {badge}
+            {isNew && (
+              <Badge className="bg-blue-500 text-white border-none text-xs">
+                New
+              </Badge>
+            )}
+            {isBestSeller && (
+              <Badge className="bg-amber-500 text-white border-none text-xs">
+                Best Seller
+              </Badge>
+            )}
+            {organic && (
+              <Badge className="bg-green-500 text-white border-none text-xs">
+                Organic
+              </Badge>
+            )}
+            {localProduct && (
+              <Badge className="bg-purple-500 text-white border-none text-xs">
+                Local
               </Badge>
             )}
             {discount > 0 && (
-              <Badge className="bg-store-amber text-primary-foreground border-none">
+              <Badge className="bg-red-500 text-white border-none text-xs">
                 -{discount}%
               </Badge>
             )}
@@ -139,21 +184,23 @@ const ProductCard = (props: ProductCardProps) => {
 
           {/* Wishlist Button */}
           <button 
-            className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/90 dark:bg-gray-900/90 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-white dark:hover:bg-gray-900"
+            className="absolute top-2 right-2 w-8 h-8 rounded-full bg-white/80 backdrop-blur-sm flex items-center justify-center hover:bg-white transition-colors"
             onClick={(e) => {
               e.preventDefault();
               e.stopPropagation();
-              // Handle wishlist functionality here
-              console.log('Add to wishlist:', id);
+              toast({
+                title: 'Wishlist',
+                description: 'Feature coming soon!',
+              });
             }}
           >
-            <Heart className="w-4 h-4" />
+            <Heart className="w-4 h-4 text-gray-600" />
           </button>
 
           {/* Out of Stock Overlay */}
-          {!inStock && (
+          {stock <= 0 && (
             <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-              <Badge variant="destructive" className="text-sm">
+              <Badge className="bg-red-500 text-white border-none px-3 py-1.5">
                 Out of Stock
               </Badge>
             </div>
@@ -163,60 +210,63 @@ const ProductCard = (props: ProductCardProps) => {
         {/* Content */}
         <div className="p-4">
           {/* Rating */}
-          {rating && rating > 0 && (
+          {rating > 0 && (
             <div className="flex items-center gap-1 mb-2">
               <div className="flex items-center">
-                {Array.from({ length: 5 }).map((_, i) => (
+                {[...Array(5)].map((_, i) => (
                   <Star 
                     key={i} 
                     className={`w-3 h-3 ${
                       i < Math.floor(rating) 
-                        ? 'fill-store-amber text-store-amber' 
+                        ? 'fill-amber-400 text-amber-400' 
                         : i < rating
-                        ? 'fill-store-amber/50 text-store-amber/50'
-                        : 'text-border'
+                        ? 'fill-amber-400 text-amber-400 opacity-50'
+                        : 'text-gray-300'
                     }`} 
                   />
                 ))}
               </div>
-              <span className="text-xs text-muted-foreground">{rating.toFixed(1)}</span>
+              <span className="text-xs text-muted-foreground">
+                ({numReviews})
+              </span>
             </div>
           )}
 
-          {/* Title */}
-          <h3 className="font-medium text-foreground mb-1 line-clamp-2 group-hover:text-primary transition-colors">
+          {/* Product Name */}
+          <h3 className="font-medium text-sm md:text-base mb-1 line-clamp-2 min-h-[40px]">
             {name}
           </h3>
-          
-          {/* Unit */}
-          <p className="text-xs text-muted-foreground mb-3">{unit}</p>
 
-          {/* Price and Add to Cart */}
-          <div className="flex items-center justify-between">
-            <div>
-              <span className="text-lg font-bold text-foreground">
-                MK {price.toLocaleString()}
+          {/* Unit */}
+          <p className="text-xs text-muted-foreground mb-2">
+            {unit}
+          </p>
+
+          {/* Price */}
+          <div className="flex items-baseline gap-2 mb-3">
+            <span className="font-bold text-lg text-foreground">
+              MK {price.toLocaleString()}
+            </span>
+            {isOnSale && (
+              <span className="text-xs text-muted-foreground line-through">
+                MK {originalPrice.toLocaleString()}
               </span>
-              {original_price && original_price > price && (
-                <p className="text-xs text-muted-foreground line-through">
-                  MK {original_price.toLocaleString()}
-                </p>
-              )}
-            </div>
-            
-            <Button 
-              size="icon" 
-              variant="ghost" 
-              className="w-8 h-8 rounded-full bg-primary/10 hover:bg-primary hover:text-primary-foreground transition-colors"
-              onClick={handleAddToCart}
-              disabled={!inStock}
-            >
-              <ShoppingCart className="w-4 h-4" />
-            </Button>
+            )}
           </div>
+
+          {/* Add to Cart Button */}
+          <Button 
+            onClick={handleAddToCart}
+            disabled={stock <= 0}
+            className="w-full bg-gradient-to-r from-orange-500 to-red-500 text-white h-9 text-sm gap-2"
+            size="sm"
+          >
+            <ShoppingCart className="w-3 h-3" />
+            {stock > 0 ? 'Add to Cart' : 'Out of Stock'}
+          </Button>
         </div>
       </div>
-    </div>
+    </Link>
   );
 };
 

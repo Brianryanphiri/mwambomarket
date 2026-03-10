@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, ShoppingBag, Heart, Share2, Star,
@@ -7,7 +7,7 @@ import {
   Apple, Beef, Fish, Milk, Egg, Wheat,
   Salad, Droplets, Leaf, ThumbsUp, Sparkles,
   ChevronRight, Loader2, ShoppingCart, Flame,
-  Utensils
+  Utensils, AlertCircle
 } from 'lucide-react';
 import Header from '@/components/store/Header';
 import Footer from '@/components/store/Footer';
@@ -18,28 +18,20 @@ import { Separator } from '@/components/ui/separator';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { useCart } from '@/components/store/CartProvider';
+import { useCart } from '@/hooks/useCart';
 import { serviceService } from '@/services/serviceService';
 import type { FamilyPackage } from '@/types/service.types';
 
-// Import product images (keep as fallback for images)
-import vegetablesImg from '@/assets/products/vegetables.jpg';
-import fruitsImg from '@/assets/products/fruits.jpg';
-import riceImg from '@/assets/products/rice.jpg';
-import breadImg from '@/assets/products/bread.jpg';
-
 // API base URL for images
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api';
+const STATIC_BASE_URL = API_BASE_URL.replace('/api', '');
 
-// Map of fallback images by package name
-const fallbackImages: Record<string, string> = {
-  'Starter Family Pack': vegetablesImg,
-  'Medium Family Feast': riceImg,
-  'Large Family Bundle': fruitsImg,
-  'Vegetarian Family Pack': vegetablesImg,
-  'Breakfast Special Pack': breadImg,
-  'Monthly Mega Pack': riceImg,
-  'default': vegetablesImg
+// Image URL helper
+const getImageUrl = (imagePath: string | undefined | null): string => {
+  if (!imagePath || imagePath === '/placeholder.svg') return '/placeholder.svg';
+  if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) return imagePath;
+  const filename = imagePath.includes('/') ? imagePath.split('/').pop() : imagePath;
+  return `${STATIC_BASE_URL}/uploads/products/${filename}`;
 };
 
 interface NutritionInfo {
@@ -52,6 +44,26 @@ interface NutritionInfo {
   sodium?: number;
 }
 
+// Skeleton loader
+const DetailsSkeleton = () => (
+  <div className="min-h-screen bg-background">
+    <Header />
+    <div className="container mx-auto px-4 py-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
+        <div className="aspect-square rounded-2xl bg-muted animate-pulse" />
+        <div className="space-y-4">
+          <div className="h-8 bg-muted rounded w-3/4 animate-pulse" />
+          <div className="h-4 bg-muted rounded w-1/2 animate-pulse" />
+          <div className="h-24 bg-muted rounded animate-pulse" />
+          <div className="h-16 bg-muted rounded animate-pulse" />
+          <div className="h-12 bg-muted rounded animate-pulse" />
+        </div>
+      </div>
+    </div>
+    <Footer />
+  </div>
+);
+
 const FamilyPackageDetails = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -59,10 +71,11 @@ const FamilyPackageDetails = () => {
   const { addItem } = useCart();
   
   const [pkg, setPkg] = useState<FamilyPackage | null>(null);
+  const [relatedPackages, setRelatedPackages] = useState<FamilyPackage[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [quantity, setQuantity] = useState(1);
   const [activeTab, setActiveTab] = useState('items');
-  const [nutrition, setNutrition] = useState<NutritionInfo | null>(null);
 
   useEffect(() => {
     if (id) {
@@ -70,96 +83,56 @@ const FamilyPackageDetails = () => {
     }
   }, [id]);
 
-  const getFullImageUrl = (imagePath: string | undefined): string => {
-    if (!imagePath || imagePath === '/placeholder.svg' || imagePath.includes('placeholder')) {
-      return '';
-    }
-    
-    if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
-      return imagePath;
-    }
-    
-    if (imagePath.startsWith('/uploads')) {
-      return `${API_BASE_URL}${imagePath}`;
-    }
-    
-    return `${API_BASE_URL}/uploads/products/${imagePath}`;
-  };
-
-  const fetchPackageDetails = async () => {
+  const fetchPackageDetails = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      // First try to get from public API
-      const allPackages = await serviceService.getPublicFamilyPackages();
-      const found = allPackages.find(p => p.id === id);
-      
-      if (found) {
-        const fullImageUrl = getFullImageUrl(found.image);
-        setPkg({
-          ...found,
-          image: fullImageUrl || (fallbackImages[found.name] || fallbackImages.default),
-          tags: Array.isArray(found.tags) ? found.tags : [],
-          includes: Array.isArray(found.includes) ? found.includes : []
-        });
-        
-        // Set nutrition if available
-        if (found.nutrition) {
-          setNutrition(found.nutrition as NutritionInfo);
-        }
-      } else {
-        // If not found in public API, try admin API (if logged in)
+      const data = await serviceService.getPublicFamilyPackage(id!);
+      console.log('Fetched package details:', data);
+      setPkg(data);
+
+      // Fetch related packages (same category)
+      if (data.category) {
         try {
-          const adminPackage = await serviceService.getFamilyPackage('1', id!);
-          if (adminPackage) {
-            const fullImageUrl = getFullImageUrl(adminPackage.image);
-            setPkg({
-              ...adminPackage,
-              image: fullImageUrl || (fallbackImages[adminPackage.name] || fallbackImages.default),
-              tags: Array.isArray(adminPackage.tags) ? adminPackage.tags : [],
-              includes: Array.isArray(adminPackage.includes) ? adminPackage.includes : []
-            });
-            
-            // Set nutrition if available
-            if (adminPackage.nutrition) {
-              setNutrition(adminPackage.nutrition as NutritionInfo);
-            }
-          }
-        } catch (adminError) {
-          console.error('Package not found in admin API:', adminError);
-          toast({
-            title: 'Package not found',
-            description: 'The requested package does not exist.',
-            variant: 'destructive',
-          });
-          navigate('/family-packages');
+          const allPackages = await serviceService.getPublicFamilyPackages();
+          const related = allPackages
+            .filter(p => p.category === data.category && p.id !== data.id)
+            .slice(0, 4);
+          setRelatedPackages(related);
+        } catch (relatedError) {
+          console.error('Error fetching related packages:', relatedError);
         }
       }
     } catch (error) {
       console.error('Error fetching package details:', error);
+      setError('Failed to load package details');
       toast({
         title: 'Error',
-        description: 'Failed to load package details.',
+        description: 'Failed to load package details',
         variant: 'destructive',
       });
     } finally {
       setLoading(false);
     }
-  };
+  }, [id, toast]);
 
   const handleAddToCart = () => {
     if (!pkg) return;
     
-    addItem({
-      id: pkg.id,
-      name: pkg.name,
-      price: pkg.price,
-      unit: 'package',
-      image: typeof pkg.image === 'string' ? pkg.image : undefined
-    });
+    for (let i = 0; i < quantity; i++) {
+      addItem({
+        id: pkg.id,
+        name: pkg.name,
+        price: pkg.price,
+        quantity: 1,
+        unit: 'package',
+        image: pkg.image
+      });
+    }
     
     toast({
       title: 'Added to cart!',
-      description: `${pkg.name} has been added to your cart.`,
+      description: `${quantity} × ${pkg.name} added to your cart.`,
       duration: 3000,
     });
   };
@@ -193,24 +166,16 @@ const FamilyPackageDetails = () => {
     return <Package className="w-4 h-4" />;
   };
 
-  const hasNutritionData = (): boolean => {
+  const hasNutritionData = (nutrition: any): boolean => {
     if (!nutrition) return false;
-    return Object.values(nutrition).some(val => val !== undefined && val > 0);
+    return Object.values(nutrition).some(val => val !== undefined && val !== null && val > 0);
   };
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Header />
-        <div className="flex items-center justify-center min-h-[60vh]">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-        </div>
-        <Footer />
-      </div>
-    );
+    return <DetailsSkeleton />;
   }
 
-  if (!pkg) {
+  if (error || !pkg) {
     return (
       <div className="min-h-screen bg-background">
         <Header />
@@ -218,7 +183,7 @@ const FamilyPackageDetails = () => {
           <Package className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
           <h1 className="text-3xl font-display font-bold mb-4">Package Not Found</h1>
           <p className="text-muted-foreground mb-8">
-            The package you're looking for doesn't exist or has been removed.
+            {error || "The package you're looking for doesn't exist or has been removed."}
           </p>
           <Button onClick={() => navigate('/family-packages')}>
             <ArrowLeft className="w-4 h-4 mr-2" />
@@ -241,12 +206,12 @@ const FamilyPackageDetails = () => {
       {/* Breadcrumb */}
       <div className="bg-muted/30 border-b border-border">
         <div className="container mx-auto px-4 py-3">
-          <div className="flex items-center gap-2 text-sm">
-            <Link to="/" className="text-muted-foreground hover:text-primary">Home</Link>
-            <ChevronRight className="w-3 h-3 text-muted-foreground" />
-            <Link to="/family-packages" className="text-muted-foreground hover:text-primary">Family Packages</Link>
-            <ChevronRight className="w-3 h-3 text-muted-foreground" />
-            <span className="font-medium text-foreground">{pkg.name}</span>
+          <div className="flex items-center gap-2 text-sm flex-wrap">
+            <Link to="/" className="text-muted-foreground hover:text-primary transition-colors">Home</Link>
+            <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+            <Link to="/family-packages" className="text-muted-foreground hover:text-primary transition-colors">Family Packages</Link>
+            <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0" />
+            <span className="font-medium text-foreground truncate max-w-[300px]">{pkg.name}</span>
           </div>
         </div>
       </div>
@@ -257,26 +222,26 @@ const FamilyPackageDetails = () => {
           {/* Left Column - Image */}
           <div>
             <div className="sticky top-[100px]">
-              <div className="relative aspect-square rounded-2xl overflow-hidden bg-muted/30 border border-border">
+              <div className="relative aspect-square rounded-2xl overflow-hidden bg-muted/30 border border-border shadow-lg">
                 <img
-                  src={pkg.image}
+                  src={getImageUrl(pkg.image)}
                   alt={pkg.name}
-                  className="w-full h-full object-cover"
+                  className="w-full h-full object-cover transition-transform duration-500 hover:scale-110"
                   onError={(e) => {
-                    (e.target as HTMLImageElement).src = fallbackImages[pkg.name] || vegetablesImg;
+                    (e.target as HTMLImageElement).src = '/placeholder.svg';
                   }}
                 />
                 
                 {/* Badges */}
                 <div className="absolute top-4 left-4 flex flex-col gap-2">
                   {pkg.popular && (
-                    <Badge className="bg-yellow-500 text-white border-none px-3 py-1.5">
+                    <Badge className="bg-yellow-500 text-white border-none px-3 py-1.5 shadow-lg">
                       <ThumbsUp className="w-3 h-3 mr-1" />
                       Popular
                     </Badge>
                   )}
                   {pkg.bestValue && (
-                    <Badge className="bg-green-500 text-white border-none px-3 py-1.5">
+                    <Badge className="bg-green-500 text-white border-none px-3 py-1.5 shadow-lg">
                       <Award className="w-3 h-3 mr-1" />
                       Best Value
                     </Badge>
@@ -286,7 +251,7 @@ const FamilyPackageDetails = () => {
                 {/* Discount Badge */}
                 {discount > 0 && (
                   <div className="absolute top-4 right-4">
-                    <Badge className="bg-red-500 text-white border-none px-3 py-1.5">
+                    <Badge className="bg-red-500 text-white border-none px-3 py-1.5 shadow-lg">
                       <Percent className="w-3 h-3 mr-1" />
                       {discount}% OFF
                     </Badge>
@@ -305,11 +270,13 @@ const FamilyPackageDetails = () => {
               </h1>
               
               <div className="flex items-center gap-4 flex-wrap">
-                <div className="flex items-center gap-1">
-                  <Star className="w-5 h-5 fill-yellow-400 text-yellow-400" />
-                  <span className="font-medium">{pkg.rating?.toFixed(1)}</span>
-                  <span className="text-sm text-muted-foreground">(120 reviews)</span>
-                </div>
+                {pkg.rating && (
+                  <div className="flex items-center gap-1">
+                    <Star className="w-5 h-5 fill-yellow-400 text-yellow-400" />
+                    <span className="font-medium">{pkg.rating.toFixed(1)}</span>
+                    <span className="text-sm text-muted-foreground">(120 reviews)</span>
+                  </div>
+                )}
                 
                 <div className="flex items-center gap-1">
                   <Package className="w-4 h-4 text-muted-foreground" />
@@ -326,7 +293,7 @@ const FamilyPackageDetails = () => {
             </div>
 
             {/* Description */}
-            <p className="text-muted-foreground mb-6">
+            <p className="text-muted-foreground mb-6 leading-relaxed">
               {pkg.description}
             </p>
 
@@ -345,19 +312,21 @@ const FamilyPackageDetails = () => {
                           <span className="text-lg text-muted-foreground line-through">
                             MK {pkg.originalPrice.toLocaleString()}
                           </span>
-                          <Badge className="bg-green-500 text-white">
+                          <Badge className="bg-green-500 text-white border-none">
                             Save MK {(pkg.originalPrice - pkg.price).toLocaleString()}
                           </Badge>
                         </>
                       )}
                     </div>
                   </div>
-                  <div className="text-right">
-                    <p className="text-sm text-muted-foreground mb-1">Savings</p>
-                    <p className="text-2xl font-bold text-green-600">
-                      MK {pkg.savings.toLocaleString()}
-                    </p>
-                  </div>
+                  {pkg.savings && pkg.savings > 0 && (
+                    <div className="text-right">
+                      <p className="text-sm text-muted-foreground mb-1">Savings</p>
+                      <p className="text-2xl font-bold text-green-600">
+                        MK {pkg.savings.toLocaleString()}
+                      </p>
+                    </div>
+                  )}
                 </div>
               </CardContent>
             </Card>
@@ -398,9 +367,6 @@ const FamilyPackageDetails = () => {
                 >
                   <ShoppingCart className="w-5 h-5" />
                   Buy Now
-                </Button>
-                <Button variant="outline" size="icon" className="w-12 h-12 rounded-xl">
-                  <Heart className="w-5 h-5" />
                 </Button>
               </div>
             </div>
@@ -473,14 +439,18 @@ const FamilyPackageDetails = () => {
                         <span className="text-muted-foreground">Total Items</span>
                         <span className="font-medium">{pkg.items}</span>
                       </div>
-                      <div className="flex justify-between py-2 border-b">
-                        <span className="text-muted-foreground">Savings</span>
-                        <span className="font-medium text-green-600">MK {pkg.savings.toLocaleString()}</span>
-                      </div>
-                      <div className="flex justify-between py-2 border-b">
-                        <span className="text-muted-foreground">Rating</span>
-                        <span className="font-medium">{pkg.rating?.toFixed(1)} / 5</span>
-                      </div>
+                      {pkg.savings && (
+                        <div className="flex justify-between py-2 border-b">
+                          <span className="text-muted-foreground">Savings</span>
+                          <span className="font-medium text-green-600">MK {pkg.savings.toLocaleString()}</span>
+                        </div>
+                      )}
+                      {pkg.rating && (
+                        <div className="flex justify-between py-2 border-b">
+                          <span className="text-muted-foreground">Rating</span>
+                          <span className="font-medium">{pkg.rating.toFixed(1)} / 5</span>
+                        </div>
+                      )}
                       {pkg.tags && pkg.tags.length > 0 && (
                         <div className="flex justify-between py-2">
                           <span className="text-muted-foreground">Tags</span>
@@ -499,59 +469,59 @@ const FamilyPackageDetails = () => {
               <TabsContent value="nutrition" className="mt-4">
                 <Card>
                   <CardContent className="p-6">
-                    {hasNutritionData() ? (
+                    {pkg.nutrition && hasNutritionData(pkg.nutrition) ? (
                       <div className="space-y-4">
                         <div className="flex items-center gap-2 mb-4">
                           <Utensils className="w-5 h-5 text-primary" />
                           <h3 className="font-semibold">Nutrition Information (per serving)</h3>
                         </div>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                          {nutrition?.calories && nutrition.calories > 0 && (
+                          {pkg.nutrition.calories && pkg.nutrition.calories > 0 && (
                             <div className="text-center p-3 bg-muted/30 rounded-lg">
                               <Flame className="w-5 h-5 text-orange-500 mx-auto mb-1" />
-                              <div className="text-xl font-bold text-primary">{nutrition.calories}</div>
+                              <div className="text-xl font-bold text-primary">{pkg.nutrition.calories}</div>
                               <div className="text-xs text-muted-foreground">Calories</div>
                             </div>
                           )}
-                          {nutrition?.protein && nutrition.protein > 0 && (
+                          {pkg.nutrition.protein && pkg.nutrition.protein > 0 && (
                             <div className="text-center p-3 bg-muted/30 rounded-lg">
                               <Beef className="w-5 h-5 text-red-500 mx-auto mb-1" />
-                              <div className="text-xl font-bold text-primary">{nutrition.protein}g</div>
+                              <div className="text-xl font-bold text-primary">{pkg.nutrition.protein}g</div>
                               <div className="text-xs text-muted-foreground">Protein</div>
                             </div>
                           )}
-                          {nutrition?.carbs && nutrition.carbs > 0 && (
+                          {pkg.nutrition.carbs && pkg.nutrition.carbs > 0 && (
                             <div className="text-center p-3 bg-muted/30 rounded-lg">
                               <Wheat className="w-5 h-5 text-amber-500 mx-auto mb-1" />
-                              <div className="text-xl font-bold text-primary">{nutrition.carbs}g</div>
+                              <div className="text-xl font-bold text-primary">{pkg.nutrition.carbs}g</div>
                               <div className="text-xs text-muted-foreground">Carbs</div>
                             </div>
                           )}
-                          {nutrition?.fat && nutrition.fat > 0 && (
+                          {pkg.nutrition.fat && pkg.nutrition.fat > 0 && (
                             <div className="text-center p-3 bg-muted/30 rounded-lg">
                               <Droplets className="w-5 h-5 text-yellow-500 mx-auto mb-1" />
-                              <div className="text-xl font-bold text-primary">{nutrition.fat}g</div>
+                              <div className="text-xl font-bold text-primary">{pkg.nutrition.fat}g</div>
                               <div className="text-xs text-muted-foreground">Fat</div>
                             </div>
                           )}
-                          {nutrition?.fiber && nutrition.fiber > 0 && (
+                          {pkg.nutrition.fiber && pkg.nutrition.fiber > 0 && (
                             <div className="text-center p-3 bg-muted/30 rounded-lg">
                               <Leaf className="w-5 h-5 text-green-500 mx-auto mb-1" />
-                              <div className="text-xl font-bold text-primary">{nutrition.fiber}g</div>
+                              <div className="text-xl font-bold text-primary">{pkg.nutrition.fiber}g</div>
                               <div className="text-xs text-muted-foreground">Fiber</div>
                             </div>
                           )}
-                          {nutrition?.sugar && nutrition.sugar > 0 && (
+                          {pkg.nutrition.sugar && pkg.nutrition.sugar > 0 && (
                             <div className="text-center p-3 bg-muted/30 rounded-lg">
                               <Coffee className="w-5 h-5 text-amber-500 mx-auto mb-1" />
-                              <div className="text-xl font-bold text-primary">{nutrition.sugar}g</div>
+                              <div className="text-xl font-bold text-primary">{pkg.nutrition.sugar}g</div>
                               <div className="text-xs text-muted-foreground">Sugar</div>
                             </div>
                           )}
-                          {nutrition?.sodium && nutrition.sodium > 0 && (
+                          {pkg.nutrition.sodium && pkg.nutrition.sodium > 0 && (
                             <div className="text-center p-3 bg-muted/30 rounded-lg">
                               <Package className="w-5 h-5 text-blue-500 mx-auto mb-1" />
-                              <div className="text-xl font-bold text-primary">{nutrition.sodium}mg</div>
+                              <div className="text-xl font-bold text-primary">{pkg.nutrition.sodium}mg</div>
                               <div className="text-xs text-muted-foreground">Sodium</div>
                             </div>
                           )}
@@ -571,6 +541,39 @@ const FamilyPackageDetails = () => {
             </Tabs>
           </div>
         </div>
+
+        {/* Related Packages */}
+        {relatedPackages.length > 0 && (
+          <section className="mt-16">
+            <h2 className="text-2xl md:text-3xl font-display font-bold mb-8">
+              You might also like
+            </h2>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
+              {relatedPackages.map(related => (
+                <Card 
+                  key={related.id} 
+                  className="cursor-pointer hover:shadow-lg transition-all hover:-translate-y-1"
+                  onClick={() => navigate(`/family-packages/${related.id}`)}
+                >
+                  <div className="aspect-square overflow-hidden">
+                    <img
+                      src={getImageUrl(related.image)}
+                      alt={related.name}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = '/placeholder.svg';
+                      }}
+                    />
+                  </div>
+                  <CardContent className="p-3">
+                    <h3 className="font-semibold text-sm mb-1 line-clamp-2">{related.name}</h3>
+                    <p className="text-primary font-bold">MK {related.price.toLocaleString()}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
 
       <Footer />

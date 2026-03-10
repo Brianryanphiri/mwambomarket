@@ -5,6 +5,7 @@ export const protect = async (req, res, next) => {
   try {
     let token;
 
+    // Check Authorization header
     if (req.headers.authorization?.startsWith('Bearer')) {
       token = req.headers.authorization.split(' ')[1];
     }
@@ -17,9 +18,12 @@ export const protect = async (req, res, next) => {
     }
 
     try {
+      // Verify token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
       
+      // Find admin by id using MySQL model (returns plain object, not Mongoose document)
       const admin = await Admin.findById(decoded.id);
+      
       if (!admin) {
         return res.status(401).json({ 
           success: false,
@@ -27,17 +31,30 @@ export const protect = async (req, res, next) => {
         });
       }
 
-      // Add full admin object to request
+      // Check if admin is active (using is_active field from MySQL)
+      if (!admin.is_active) {
+        return res.status(401).json({ 
+          success: false,
+          message: 'Account is deactivated' 
+        });
+      }
+
+      // Create a safe admin object without password
+      const { password_hash, ...safeAdmin } = admin;
+      
+      // Attach admin to request object (without password)
       req.admin = {
-        id: admin.id,
-        name: admin.name,
-        email: admin.email,
-        role: admin.role,
-        permissions: admin.permissions
+        id: safeAdmin.id,
+        name: safeAdmin.name,
+        email: safeAdmin.email,
+        role: safeAdmin.role,
+        permissions: safeAdmin.permissions || []
       };
       
       next();
     } catch (jwtError) {
+      console.error('JWT Error:', jwtError);
+      
       if (jwtError.name === 'TokenExpiredError') {
         return res.status(401).json({ 
           success: false,
@@ -53,7 +70,7 @@ export const protect = async (req, res, next) => {
       throw jwtError;
     }
   } catch (error) {
-    console.error('Auth error:', error);
+    console.error('Auth middleware error:', error);
     res.status(401).json({ 
       success: false,
       message: 'Not authorized' 
@@ -61,6 +78,7 @@ export const protect = async (req, res, next) => {
   }
 };
 
+// Role-based authorization middleware
 export const admin = (...allowedRoles) => {
   return (req, res, next) => {
     if (!req.admin) {
@@ -92,10 +110,10 @@ export const admin = (...allowedRoles) => {
   };
 };
 
-// Alias for authorize to match your route usage
+// Alias for admin to match your route usage
 export const authorize = admin;
 
-// Optional: Permission-based authorization
+// Permission-based authorization
 export const hasPermission = (permission) => {
   return (req, res, next) => {
     if (!req.admin) {
@@ -127,4 +145,5 @@ export const hasPermission = (permission) => {
 export const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
     expiresIn: '30d',
-  });};
+  });
+};
